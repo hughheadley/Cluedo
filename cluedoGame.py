@@ -88,6 +88,71 @@ def get_my_cards(
             if(cardShown != "0"):
                 print("\nWarning, card named " + cardShown + " not found\n")
 
+def get_starting_index(playerNames):
+    nameValid = False
+    while(not nameValid):
+        startingPlayerName = raw_input("Who is first to play?")
+        if(startingPlayerName in playerNames):
+            nameValid = True
+            startIndex = playerNames.index(startingPlayerName)
+        else:
+            print("Cannot find the name " + startingPlayerName)
+            print("Choose from:")
+            print(playerNames)
+    return startIndex
+
+def get_guess(personList, weaponList, roomList):
+    # Find what player has asked. Return list with person, weapon, room.
+    guess = ["","",""]
+    # Find the person.
+    inputValid = False
+    while(not inputValid):
+        person = raw_input("What person was asked?")
+        if(person == "quit"):
+            return "quit"
+        else:
+            if(person in personList):
+                guess[0] = person
+                inputValid = True
+            else:
+                print("That isn't a valid person. Choose one from:")
+                print(personList)
+    # Find the weapon.
+    inputValid = False
+    while(not inputValid):
+        weapon = raw_input("What weapon was asked?")
+        if(weapon == "quit"):
+            return "quit"
+        else:
+            if(weapon in weaponList):
+                guess[1] = weapon
+                inputValid = True
+            else:
+                print("That isn't a valid weapon. Choose one from:")
+                print(weaponList)
+    # Find the room.
+    inputValid = False
+    while(not inputValid):
+        room = raw_input("What room was asked?")
+        if(room == "quit"):
+            return "quit"
+        else:
+            if(room in roomList):
+                guess[2] = room
+                inputValid = True
+            else:
+                print("That isn't a valid room. Choose one from:")
+                print(roomList)
+    return guess
+
+def other_questioning(
+    playerNames, personList, weaponList, roomList, personInfo, weaponInfo,
+    roomInfo):
+        guess = get_guess(personList, weaponList, roomList)
+        # Check for the quit signal.
+        if(guess == "quit"):
+            return "quit"
+
 def play_cluedo(playerNames):
     # Play a game of Cluedo and suggest guesses.
     print("Name of those playing are:")
@@ -109,5 +174,18 @@ def play_cluedo(playerNames):
         personList, weaponList, roomList, personInfo, weaponInfo, roomInfo,
         numberPlayers)
 
+    # Begin the questioning.
+    startIndex = get_starting_index(playerNames)
+    gameOver = False
+    questionerIndex = startIndex
+    while(not gameOver):
+        # If questioner is not me then record what is asked.
+        if(questionerIndex != 0):
+            quitSignal = other_questioning(
+                playerNames, personList, weaponList, roomList, personInfo,
+                weaponInfo, roomInfo)
+            if(quitSignal == "quit"):
+                gameOver = True
+            
 names = ["Me", "Alona", "Christian"]
 play_cluedo(names)
