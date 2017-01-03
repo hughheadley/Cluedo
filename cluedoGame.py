@@ -103,7 +103,7 @@ def get_starting_index(playerNames):
 
 def get_guess(personList, weaponList, roomList):
     # Find what player has asked. Return list with person, weapon, room.
-    guess = ["","",""]
+    guess = [0]*3 # The indexes of the cards guessed.
     # Find the person.
     inputValid = False
     while(not inputValid):
@@ -112,7 +112,7 @@ def get_guess(personList, weaponList, roomList):
             return "quit"
         else:
             if(person in personList):
-                guess[0] = person
+                guess[0] = personList.index(person)
                 inputValid = True
             else:
                 print("That isn't a valid person. Choose one from:")
@@ -125,7 +125,7 @@ def get_guess(personList, weaponList, roomList):
             return "quit"
         else:
             if(weapon in weaponList):
-                guess[1] = weapon
+                guess[1] = weaponList.index(weapon)
                 inputValid = True
             else:
                 print("That isn't a valid weapon. Choose one from:")
@@ -138,20 +138,68 @@ def get_guess(personList, weaponList, roomList):
             return "quit"
         else:
             if(room in roomList):
-                guess[2] = room
+                guess[2] = roomList.index(room)
                 inputValid = True
             else:
                 print("That isn't a valid room. Choose one from:")
                 print(roomList)
     return guess
 
+def guess_to_text(guess, personList, weaponList, roomList):
+    guessText = ["","",""]
+    guessText[0] = personList[guess[0]]
+    guessText[1] = weaponList[guess[1]]
+    guessText[2] = roomList[guess[2]]
+    return guessText
+
+def record_no_answer(guess, answerIndex, personInfo, weaponInfo, roomInfo):
+    # Mark player's info to show that they didn't have any cards guessed.
+    personInfo[answerIndex+1][guess[0]+1] = -1
+    weaponInfo[answerIndex+1][guess[1]+1] = -1
+    roomInfo[answerIndex+1][guess[2]+1] = -1
+
+def follow_answers(
+    guess, questionerIndex, playerNames, personList, weaponList, roomList,
+    personInfo, weaponInfo, roomInfo):
+    # After guess is made check answers given for card indications.
+    # If someone has nothing to show then record in into tables.
+    guessText = guess_to_text(guess, personList, weaponList, roomList)
+    questioner = playerNames[questionerIndex]
+    print(questioner + " has made a guess")
+    print(guessText)
+    numberPlayers = len(playerNames)
+    answerIndex = ((questionerIndex + 1) % numberPlayers)
+    questioningActive = True
+    while(questioningActive):
+        # If answering reaches questioner then end answering.
+        if(answerIndex == questionerIndex):
+            questioningActive = False
+        else:
+            # If it is not me to answer then note if nothing is shown.
+            answererName = playerNames[answerIndex]
+            answer = raw_input("Did " + answererName + " show a card?")
+            if(answer in ["0", "No", "no", "N", "n"]):
+                record_no_answer(
+                    guess, answerIndex, personInfo, weaponInfo, roomInfo)
+            # If something was shown then end answering.
+            else:
+                questioningActive = False
+            # Move to the next person.
+            answerIndex = ((answerIndex + 1) % numberPlayers)
+
 def other_questioning(
-    playerNames, personList, weaponList, roomList, personInfo, weaponInfo,
-    roomInfo):
+    questionerIndex, playerNames, personList, weaponList, roomList, personInfo,
+    weaponInfo, roomInfo):
+        questioner = playerNames[questionerIndex]
+        print(questioner + " is making a guess")
         guess = get_guess(personList, weaponList, roomList)
         # Check for the quit signal.
         if(guess == "quit"):
             return "quit"
+        # Follow those giving answers
+        follow_answers(guess, questionerIndex, playerNames, personList,
+                     weaponList, roomList, personInfo, weaponInfo, roomInfo)
+        return 0
 
 def play_cluedo(playerNames):
     # Play a game of Cluedo and suggest guesses.
@@ -182,10 +230,11 @@ def play_cluedo(playerNames):
         # If questioner is not me then record what is asked.
         if(questionerIndex != 0):
             quitSignal = other_questioning(
-                playerNames, personList, weaponList, roomList, personInfo,
-                weaponInfo, roomInfo)
+                questionerIndex, playerNames, personList, weaponList, roomList,
+                personInfo,weaponInfo, roomInfo)
             if(quitSignal == "quit"):
                 gameOver = True
-            
+        questionerIndex = ((questionerIndex + 1) % numberPlayers)
+        
 names = ["Me", "Alona", "Christian"]
 play_cluedo(names)
