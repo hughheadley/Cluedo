@@ -1,7 +1,7 @@
 def make_person_info(personList, playerNames):
     # Return a table of what is known about all persons held by each player.
     # 7 columns, one for each person and one for player names.
-    # One row for person names, one for every player and one more for answers.
+    # One row for person names, one for every player and one more for solutions.
     columnCount = len(personList) + 1
     rowCount = len(playerNames) + 2
     # Fill table with 0's to indicate no information.
@@ -14,13 +14,14 @@ def make_person_info(personList, playerNames):
     # First column is player names.
     for i in range(1, 1+len(playerNames)):
         personInfo[i][0] = playerNames[i-1]
-    personInfo[len(playerNames)+1][0] = "Answer"
+    personInfo[len(playerNames)+1][0] = "Solution"
     return personInfo
 
 def make_weapon_info(weaponList, playerNames):
     # Return a table of what is known about all weapons held by each player.
     # 7 columns, one for each weapon and one for player names.
-    # One row for weapon names, one for every player and one more for answers.
+    # One row for weapon names, one for every player and one more for
+    #solutions.
     columnCount = len(weaponList) + 1
     rowCount = len(playerNames) + 2
     # Fill table with 0's to indicate no information.
@@ -33,13 +34,13 @@ def make_weapon_info(weaponList, playerNames):
     # First column is player names.
     for i in range(1, 1+len(playerNames)):
         weaponInfo[i][0] = playerNames[i-1]
-    weaponInfo[len(playerNames)+1][0] = "Answer"
+    weaponInfo[len(playerNames)+1][0] = "Solution"
     return weaponInfo
 
 def make_room_info(roomList, playerNames):
     # Return a table of what is known about all rooms held by each player.
     # 9 columns, one for each room and one for player names.
-    # One row for room names, one for every player and one more for answers.
+    # One row for room names, one for every player and one more for solutions.
     columnCount = len(roomList) + 1
     rowCount = len(playerNames) + 2
     # Fill table with 0's to indicate no information.
@@ -52,7 +53,7 @@ def make_room_info(roomList, playerNames):
     # First column is player names.
     for i in range(1, 1+len(playerNames)):
         roomInfo[i][0] = playerNames[i-1]
-    roomInfo[len(playerNames)+1][0] = "Answer"
+    roomInfo[len(playerNames)+1][0] = "Solution"
     return roomInfo
 
 def add_card_seen(shownBy, infoTable, cardIndex, numberPlayers):
@@ -168,7 +169,7 @@ def follow_answers(
     print(questioner + " has made a guess")
     print(guessText)
     numberPlayers = len(playerNames)
-    answerIndex = ((questionerIndex + 1) % numberPlayers)
+    answerIndex = ((questionerIndex+1) % numberPlayers)
     questioningActive = True
     while(questioningActive):
         # If answering reaches questioner then end answering.
@@ -178,28 +179,103 @@ def follow_answers(
             # If it is not me to answer then note if nothing is shown.
             answererName = playerNames[answerIndex]
             answer = raw_input("Did " + answererName + " show a card?")
-            if(answer in ["0", "No", "no", "N", "n"]):
+            if(answer in ["0", "No", "no", "N", "n", ""]):
                 record_no_answer(
                     guess, answerIndex, personInfo, weaponInfo, roomInfo)
             # If something was shown then end answering.
             else:
                 questioningActive = False
             # Move to the next person.
-            answerIndex = ((answerIndex + 1) % numberPlayers)
+            answerIndex = ((answerIndex+1) % numberPlayers)
 
 def other_questioning(
     questionerIndex, playerNames, personList, weaponList, roomList, personInfo,
     weaponInfo, roomInfo):
         questioner = playerNames[questionerIndex]
-        print(questioner + " is making a guess")
+        print("\n" + questioner + " is making a guess")
         guess = get_guess(personList, weaponList, roomList)
         # Check for the quit signal.
         if(guess == "quit"):
             return "quit"
-        # Follow those giving answers
+        # Follow those players giving answers.
         follow_answers(guess, questionerIndex, playerNames, personList,
                      weaponList, roomList, personInfo, weaponInfo, roomInfo)
         return 0
+
+def deduce_known_cards(infoTable, numberPlayers, numberCards):
+    # Use deduction to find any known cards.
+    improvements = False
+    for card in range(0, numberCards):
+        # Sum up all info values for this card.
+        infoSum = 0
+        for player in range(0, numberPlayers+1):
+            infoSum += infoTable[player+1][card+1]
+        # If all but one entries are -1 then card owner is known.
+        if(infoSum == (-1*numberPlayers)):
+            # An improvement in knowledge is made.
+            improvements = True
+            # Find who has card.
+            cardOwner = 0
+            for player in range(0, numberPlayers+1):
+                if(infoTable[player+1][card+1] != -1):
+                    cardOwner = player
+                    add_card_seen(
+                        cardOwner, infoTable, card, numberPlayers)
+    return improvements
+
+def count_known_cards(infoTable, numberPlayers, numberCards):
+    # Count the number of cards known to be held by each player.
+    cardsKnown = [0] * (numberPlayers+1)
+    for player in range(0, numberPlayers+1):
+        for card in range(0, numberCards):
+            if(infoTable[player+1][card+1] == 1):
+                cardsKnown[player] += 1
+    return cardsKnown
+
+def check_solution_cards(infoTable, numberPlayers, numberCards):
+    # If a solution card is known then other cards are not the solution.
+    # Search for a known solution.
+    for card in range(0, numberCards):
+        if(infoTable[numberPlayers+1][card+1] == 1):
+            for nonSolution in range(0, numberCards):
+                # For all cards that are not the solution set their information
+                #equal to -1.
+                if(nonSolution != card):
+                    infoTable[numberPlayers+1][nonSolution+1] = -1
+
+def update_info_table(infoTable, numberPlayers, numberCards):
+    # Fill in missing information which is obvious from what is already known.
+    # Return the number of cards of this types known to be held by each player.
+    # Check if any cards' owners are known by deduction.
+    improvements = deduce_known_cards(infoTable, numberPlayers, numberCards)
+    # If a solution card is known then others of that type are known to be not
+    #the solution.
+    check_solution_cards(infoTable, numberPlayers, numberCards)
+    return improvements
+
+def update_information(personInfo, weaponInfo, roomInfo, numberPlayers):
+    improvements = True
+    while(improvements):
+        # Repeat this check until no improvements in knowledge are made.
+        personImprovements = update_info_table(personInfo, numberPlayers, 6)
+        weaponImprovements = update_info_table(weaponInfo, numberPlayers, 6)
+        roomImprovements = update_info_table(roomInfo, numberPlayers, 9)
+        improvements = (personImprovements or weaponImprovements or
+                        roomImprovements)
+
+    cardsKnown = [0] * (numberPlayers+1)
+    personCardsKnown = count_known_cards(personInfo, numberPlayers, 6)
+    weaponCardsKnown = count_known_cards(weaponInfo, numberPlayers, 6)
+    roomCardsKnown = count_known_cards(roomInfo, numberPlayers, 9)
+    for player in range(0, numberPlayers+1):
+        cardsKnown[player] = (personCardsKnown[player] +
+                              weaponCardsKnown[player] +
+                              roomCardsKnown[player])
+    print("Updated info table")
+    print(personInfo)
+    print(weaponInfo)
+    print(roomInfo)
+    return cardsKnown
 
 def play_cluedo(playerNames):
     # Play a game of Cluedo and suggest guesses.
@@ -227,13 +303,16 @@ def play_cluedo(playerNames):
     gameOver = False
     questionerIndex = startIndex
     while(not gameOver):
-        # If questioner is not me then record what is asked.
         if(questionerIndex != 0):
+            # If questioner is not me then record what is asked.
             quitSignal = other_questioning(
                 questionerIndex, playerNames, personList, weaponList, roomList,
                 personInfo,weaponInfo, roomInfo)
             if(quitSignal == "quit"):
                 gameOver = True
+        else:
+            # If questioner is me then update info and compute best guess.
+            update_information(personInfo, weaponInfo, roomInfo, numberPlayers)
         questionerIndex = ((questionerIndex + 1) % numberPlayers)
         
 names = ["Me", "Alona", "Christian"]
