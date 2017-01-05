@@ -1,3 +1,7 @@
+from __future__ import print_function, division
+import random
+import math
+
 def make_person_info(personList, playerNames):
     # Return a table of what is known about all persons held by each player.
     # 7 columns, one for each person and one for player names.
@@ -68,6 +72,29 @@ def add_card_seen(shownBy, infoTable, cardIndex, numberPlayers):
         if(player != shownBy):
             infoTable[player+1][cardIndex+1] = -1
 
+def print_info_table(infoTable, numberPlayers, numberCards):
+    # Print an infoTable in a legible form.
+    # Find the number of tabs required for each column to remain alligned.
+    columnTabs = [0]*(numberCards+1)
+    # Find the longest name.
+    maxNameLength = 0
+    for i in range(numberPlayers+2):
+        nameLength = len(infoTable[i][0])
+        if(nameLength > maxNameLength):
+            maxNameLength = nameLength
+    columnTabs[0] = math.ceil(maxNameLength/4)
+    # Find the number of tabs to equal each column heading.
+    for col in range(1, numberCards+1):
+        columnTabs[col] = math.ceil(len(infoTable[0][col])/4)
+    for i in range(numberPlayers+2):
+        for j in range(numberCards+1):
+            print(str(infoTable[i][j]), end='')
+            # Compute tabs needed.
+            tabs = int(columnTabs[j] - math.floor(len(str(infoTable[i][j]))/4))
+            for k in range(tabs):
+                print("\t", end='')
+        print("\n", end='')
+
 def get_my_cards(
     personList, weaponList, roomList, personInfo, weaponInfo, roomInfo,
     numberPlayers):
@@ -92,7 +119,7 @@ def get_my_cards(
 def get_starting_index(playerNames):
     nameValid = False
     while(not nameValid):
-        startingPlayerName = raw_input("Who is first to play?")
+        startingPlayerName = raw_input("\nWho is first to play?\n")
         if(startingPlayerName in playerNames):
             nameValid = True
             startIndex = playerNames.index(startingPlayerName)
@@ -166,7 +193,7 @@ def follow_answers(
     # If someone has nothing to show then record in into tables.
     guessText = guess_to_text(guess, personList, weaponList, roomList)
     questioner = playerNames[questionerIndex]
-    print(questioner + " has made a guess")
+    print("\n" + questioner + " has made a guess")
     print(guessText)
     numberPlayers = len(playerNames)
     answerIndex = ((questionerIndex+1) % numberPlayers)
@@ -253,6 +280,168 @@ def update_info_table(infoTable, numberPlayers, numberCards):
     check_solution_cards(infoTable, numberPlayers, numberCards)
     return improvements
 
+def get_candidate_cards(infoTable, unknownCards):
+    # Fill in table with the number of cards which could correspond to each
+    #option.
+    print("unknownCards")
+    print(unknownCards)
+    numberPlayers = len(unknownCards)
+    numberCards = len(infoTable[0][:])-1
+    candidateTable = [[0 for col in range(numberCards+1)]
+                      for row in range(numberPlayers+2)]
+    for player in range(numberPlayers):
+        for card in range(numberCards):
+            if(infoTable[player+1][card+1] == -1):
+                candidateTable[player+1][card+1] = 0
+            else:
+                candidateTable[player+1][card+1] = unknownCards[player]
+    return candidateTable
+
+def get_option_weights(candidateTable, numberPlayers):
+    # Compute a list with the weights of each card as the solution.
+    numberCards = len(candidateTable[0][:])-1
+    weights = [0.0]*numberCards
+    for card in range(numberCards):
+        solutionCandidates = candidateTable[numberPlayers+1][card+1]
+        sumCandidates = 0
+        for player in range(numberPlayers+1):
+            sumCandidates += candidateTable[player+1][card+1]
+        weights[card] = (solutionCandidates/sumCandidates)
+    return weights
+
+def get_option_probabilities(weights):
+    # Convert weighted options into probabilities.
+    weightsSum = sum(weights)
+    probabilities = [(weight/weightsSum) for weight in weights]
+    return probabilities
+
+def distribution_information(probabilities):
+    # Compute the information of a discrete distribution.
+    informationSum = 0
+    for i in range(len(probabilities)):
+        informationSum += -1*(probabilities[i]*math.log(probabilities[i]))
+    return informationSum
+
+def compute_information(
+    personInfo, weaponInfo, roomInfo, unknownCards, numberPlayers):
+    # Compute the information of the distribution of the game's solution.
+    # Higher information indicates that less is known about the solution.
+    # Compute table of candidate cards.
+    personCandidates = get_candidate_cards(personInfo, unknownCards)
+    # Compute weights list of possible solutions.
+    personWeights = get_option_weights(personCandidates, numberPlayers)
+    # Compute probability of possible solutions.
+    personProbs = get_option_probabilities(personWeights)
+    # Compute information.
+    personInformation = distribution_information(personProbs)
+    
+    # Repeat computation for weapon. 
+    weaponCandidates = get_candidate_cards(weaponInfo, unknownCards)
+    # Compute weights list of possible solutions.
+    weaponWeights = get_option_weights(weaponCandidates, numberPlayers)
+    # Compute probability of possible solutions.
+    weaponProbs = get_option_probabilities(weaponWeights)
+    # Compute information.
+    weaponInformation = distribution_information(weaponProbs)
+    
+    # Repeat computation for room.
+    roomCandidates = get_candidate_cards(roomInfo, unknownCards)
+    # Compute weights list of possible solutions.
+    roomWeights = get_option_weights(roomCandidates, numberPlayers)
+    # Compute probability of possible solutions.
+    roomProbs = get_option_probabilities(roomWeights)
+    # Compute information.
+    roomInformation = distribution_information(roomProbs)
+    
+    totalInformation = personInformation + weaponInformation + roomInformation
+    return totalInformation
+
+def find_best_guess(
+    personInfo, weaponInfo, roomInfo, myRoom, numberPlayers, unknownCards):
+    # Compute the guess which maximises the expected information gained.
+    compute_information(
+        personInfo, weaponInfo, roomInfo, unknownCards, numberPlayers)
+    # Until better algorithm is made use a random guess.
+    guessPerson = random.randint(0,5)
+    guessWeapon = random.randint(0,5)
+    roomList = roomInfo[0][1:10]
+    guessRoom = roomList.index(myRoom)
+    guess = [guessPerson, guessWeapon, guessRoom]
+    return guess
+
+def follow_responses(guess, playerNames, personInfo, weaponInfo, roomInfo):
+    # After I make a guess check responses given for card indications.
+    # If someone has nothing to show then record into tables.
+    personList = personInfo[0][1:7]
+    weaponList = weaponInfo[0][1:7]
+    roomList = roomInfo[0][1:10]
+    guessText = guess_to_text(guess, personList, weaponList, roomList)
+    questionerIndex = 0
+    print("I have made a guess")
+    print(guessText)
+    numberPlayers = len(playerNames)
+    answerIndex = 1
+    questioningActive = True
+    while(questioningActive):
+        # If answering reaches questioner then end answering.
+        if(answerIndex == questionerIndex):
+            questioningActive = False
+        else:
+            # If it is not me to answer then note if nothing is shown.
+            answererName = playerNames[answerIndex]
+            answer = raw_input("Did " + answererName + " show a card?")
+            if(answer in ["0", "No", "no", "N", "n", ""]):
+                record_no_answer(
+                    guess, answerIndex, personInfo, weaponInfo, roomInfo)
+            else:
+                cardInvalid = True
+                while cardInvalid:
+                    cardShown = raw_input("What card was shown?")
+                    cardIndex = -1
+                    myIndex = 0
+                    if cardShown in personList:
+                        cardIndex = personList.index(cardShown)
+                        add_card_seen(myIndex, personInfo, cardIndex,
+                                      numberPlayers)
+                        cardInvalid = False
+                    elif cardShown in weaponList:
+                        cardIndex = weaponList.index(cardShown)
+                        add_card_seen(myIndex, weaponInfo, cardIndex,
+                                      numberPlayers)
+                        cardInvalid = False
+                    elif cardShown in roomList:
+                        cardIndex = roomList.index(cardShown)
+                        add_card_seen(myIndex, roomInfo, cardIndex,
+                                      numberPlayers)
+                        cardInvalid = False
+                    else:
+                        print("\nWarning, card named " + cardShown +
+                              " not found\n")
+                    # If something was shown then end answering.
+                    questioningActive = False
+                # Move to the next person.
+                answerIndex = ((answerIndex+1) % numberPlayers)
+
+def me_questioning(
+    personInfo, weaponInfo, roomInfo, playerNames, initialCards):
+    # Update information and make a guess.
+    numberPlayers = len(playerNames)
+    unknownCards = [0]*(numberPlayers+1)
+    knownCards = update_information(
+        personInfo, weaponInfo, roomInfo, numberPlayers)    
+    # Find number of unknown cards.
+    for i in range(numberPlayers):
+        unknownCards[i] = initialCards[i] - knownCards[i]
+    # Set solution unknownCards to 1 because only 1 card is ever relevant.
+    unknownCards[numberPlayers] = 1
+
+    # Make a guess and record answers.
+    myRoom = raw_input("\nWhat room am I in?")
+    if(not (myRoom in ["0", "None", "none", "No", "no", "N", "n", ""])):
+        guess = find_best_guess(personInfo, weaponInfo, roomInfo, myRoom,
+                                numberPlayers, unknownCards)
+        follow_responses(guess, playerNames, personInfo, weaponInfo, roomInfo)
+
 def update_information(personInfo, weaponInfo, roomInfo, numberPlayers):
     improvements = True
     while(improvements):
@@ -272,17 +461,34 @@ def update_information(personInfo, weaponInfo, roomInfo, numberPlayers):
                               weaponCardsKnown[player] +
                               roomCardsKnown[player])
     print("Updated info table")
-    print(personInfo)
-    print(weaponInfo)
-    print(roomInfo)
+    print_info_table(personInfo, numberPlayers, 6)
+    print_info_table(weaponInfo, numberPlayers, 6)
+    print_info_table(roomInfo, numberPlayers, 9)
     return cardsKnown
+
+def get_initial_cards(playerNames):
+    # Get the initial number of cards that each person has.
+    numberPlayers = len(playerNames)
+    # Check if cards can be equally dealt.
+    if((18/numberPlayers) == int(18/numberPlayers)):
+        # All players have the same number of cards.
+        initialCards = [int(18/numberPlayers)]*numberPlayers
+    else:
+        # Deal out cards.
+        initialCards = [0]*numberPlayers
+        startDealName = raw_input("Who was dealt to first?\n")
+        startDealIndex = playerNames.index(startDealName)
+        for i in range(18):
+            initialCards[(startDealIndex+i)%numberPlayers] += 1
+    return initialCards
 
 def play_cluedo(playerNames):
     # Play a game of Cluedo and suggest guesses.
-    print("Name of those playing are:")
+    print("Names of those playing are:")
     for name in playerNames:
         print(name)
     numberPlayers = len(playerNames)
+    initialCards = get_initial_cards(playerNames)
     # Create initial information lists.
     personList = ["Green", "Mustard", "Orchid", "Peacock", "Plum", "Scarlet"]
     personInfo = make_person_info(personList, playerNames)
@@ -307,13 +513,13 @@ def play_cluedo(playerNames):
             # If questioner is not me then record what is asked.
             quitSignal = other_questioning(
                 questionerIndex, playerNames, personList, weaponList, roomList,
-                personInfo,weaponInfo, roomInfo)
+                personInfo, weaponInfo, roomInfo)
             if(quitSignal == "quit"):
                 gameOver = True
         else:
-            # If questioner is me then update info and compute best guess.
-            update_information(personInfo, weaponInfo, roomInfo, numberPlayers)
+            me_questioning(
+                personInfo, weaponInfo, roomInfo, playerNames, initialCards)
         questionerIndex = ((questionerIndex + 1) % numberPlayers)
-        
+
 names = ["Me", "Alona", "Christian"]
 play_cluedo(names)
