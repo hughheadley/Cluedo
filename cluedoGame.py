@@ -401,24 +401,25 @@ def find_first_show(infoTable, cardIndex, numberPlayers):
     return firstShow
 
 def card_shown_preference(
-    guess, personInfo, weaponInfo, roomInfo, numberPlayers, unknownCards,
-    currentInformation):
+    guess, personInfo, weaponInfo, roomInfo, numberPlayers, unknownCards):
     # Find which card the first player would prefer to show.
     # The first player will show whichever card gives the least information.
     # Make copy tables of information.
     personInfoCopy = copy.deepcopy(personInfo)
     weaponInfoCopy = copy.deepcopy(weaponInfo)
     roomInfoCopy = copy.deepcopy(roomInfo)
+    
     # Find modify table as if each card is shown by first possible player.
     whoShowsPerson = find_first_show(personInfoCopy, guess[0], numberPlayers)
     add_card_seen(whoShowsPerson, personInfoCopy, guess[0], numberPlayers)
-    deduce_known_cards(personInfoCopy, numberPlayers, 6)
+    update_info_table(personInfoCopy, numberPlayers, 6)
     whoShowsWeapon = find_first_show(personInfoCopy, guess[0], numberPlayers)
     add_card_seen(whoShowsWeapon, weaponInfoCopy, guess[1], numberPlayers)
-    deduce_known_cards(weaponInfoCopy, numberPlayers, 6)
+    update_info_table(weaponInfoCopy, numberPlayers, 6)
     whoShowsRoom = find_first_show(personInfoCopy, guess[0], numberPlayers)
     add_card_seen(whoShowsRoom, roomInfoCopy, guess[2], numberPlayers)
-    deduce_known_cards(roomInfoCopy, numberPlayers, 9)
+    update_info_table(roomInfoCopy, numberPlayers, 9)
+
     # Find information after each possible card shown.
     personCardInformation = compute_information(personInfoCopy, weaponInfo,
                                                 roomInfo, unknownCards,
@@ -543,28 +544,113 @@ def get_outcome_probabilities(
     print("Probabilities", probabilities)
     return probabilities
 
+def get_outcome_informations(
+    guess, preferences, personInfo, weaponInfo, roomInfo, numberPlayers,
+    unknownCards):
+    # Compute the information after every outcome of cards shown.
+    numberOutcomes = (3*numberPlayers)-2
+    # conditionalProbs is the probability of an outcome given than all
+    #prior outcomes have not happened.
+    outcomeInformations = [0]*numberOutcomes
+    # Make tables with all information from previous cards not shown.
+    personUnshownInfo = copy.deepcopy(personInfo)
+    weaponUnshownInfo = copy.deepcopy(weaponInfo)
+    roomUnshownInfo = copy.deepcopy(roomInfo)
+
+    # For each outcome find information after card shown.
+    for player in range(1, numberPlayers):
+        for cardType in range(3):
+            outcomeIndex = 3*(player-1) + cardType
+            # Make tables with info from all previous players not
+            #showing anything.
+            currentPersonInfo = copy.deepcopy(personUnshownInfo)
+            currentWeaponInfo = copy.deepcopy(weaponUnshownInfo)
+            currentRoomInfo = copy.deepcopy(roomUnshownInfo)
+            # Update table for case of showing this card type.
+            if(preferences[cardType] == "person"):
+                add_card_seen(player, currentPersonInfo, guess[0],
+                              numberPlayers)
+            elif(preferences[cardType] == "weapon"):
+                add_card_seen(player, currentWeaponInfo, guess[1],
+                              numberPlayers)
+            else:
+                add_card_seen(player, currentRoomInfo, guess[2], numberPlayers)
+            # Deduce information from this card shown.
+            update_information(currentPersonInfo, currentWeaponInfo,
+                               currentRoomInfo, numberPlayers)
+            # Find information of updated tables.
+            newInformation = compute_information(currentPersonInfo,
+                                                     currentWeaponInfo,
+                                                     currentRoomInfo,
+                                                     unknownCards,
+                                                     numberPlayers)
+            outcomeInformations[outcomeIndex] = newInformation
+        # Update information tables as if player didn't show anything.
+        record_no_answer(guess, player, personUnshownInfo, weaponUnshownInfo,
+                         roomUnshownInfo)
+    # Find the final information if nobody showed anything.
+    update_information(personUnshownInfo, weaponUnshownInfo, roomUnshownInfo,
+                       numberPlayers)
+    newInformation = compute_information(personUnshownInfo, weaponUnshownInfo,
+                                         roomUnshownInfo, unknownCards,
+                                         numberPlayers)
+    outcomeInformations[numberOutcomes-1] = newInformation
+    return outcomeInformations
+
+def average_information(probabilities, informations):
+    # Average the information over all outcomes.
+    numberOutcomes = len(probabilities)
+    informationSum = 0
+    for outcome in range(numberOutcomes):
+        informationSum += (probabilities[outcome] * informations[outcome])
+    print("infosum", informationSum)
+    return informationSum
+
+def evaluate_guess(
+    guess, personInfo, weaponInfo, roomInfo, numberPlayers, unknownCards):
+    # Compute the expected information from all possible outcomes of
+    #questioning.
+    # Find the preference of cards shown to me.
+    preferences = card_shown_preference(guess, personInfo, weaponInfo,
+                                        roomInfo, numberPlayers, unknownCards)
+    # Find the probability of each outcome of a guess.
+    probabilities = get_outcome_probabilities(guess, preferences, personInfo,
+                                              weaponInfo, roomInfo,
+                                              unknownCards)
+    # Find the information under each outcome.
+    informations = get_outcome_informations(guess, preferences, personInfo,
+                                            weaponInfo, roomInfo,
+                                            numberPlayers, unknownCards)
+    # Average the information over all outcomes.
+    expectedInformation = average_information(probabilities, informations)
+    return expectedInformation
+
 def find_best_guess(
     personInfo, weaponInfo, roomInfo, myRoom, numberPlayers, unknownCards):
     # Compute the guess which maximises the expected information gained.
     # Find the current information of the solution cards.
     currentInformation = compute_information(personInfo, weaponInfo, roomInfo,
                                               unknownCards, numberPlayers)
-    
-    # Until better algorithm is made use a random guess.
-    guessPerson = random.randint(0,5)
-    guessWeapon = random.randint(0,5)
+    # Compare current information with uninformed information level.
+    uninformed = (2 * math.log(6)) + math.log(9)
+    percentComplete = round(100 * (1 - (currentInformation / uninformed)))
+    print("Currently", percentComplete, "percent complete")
+    # Loop through all possible guesses. Find guess giving lowest
+    #information.
+    bestGuess = [0]*3
+    bestGuessPerformance = 100
     roomList = roomInfo[0][1:10]
     guessRoom = roomList.index(myRoom)
-    guess = [guessPerson, guessWeapon, guessRoom]
-    
-    # Find the preference of cards shown to me.
-    preferences = card_shown_preference(guess, personInfo, weaponInfo,
-                                        roomInfo, numberPlayers, unknownCards,
-                                        currentInformation)
-    # Find the probability of each outcome of a guess.
-    get_outcome_probabilities(guess, preferences, personInfo, weaponInfo,
-                              roomInfo, unknownCards)
-    return guess
+    for person in range(6):
+        for weapon in range(6):
+            guessPerson = person
+            guessWeapon = weapon
+            guess = [guessPerson, guessWeapon, guessRoom]
+            performance = evaluate_guess(guess, personInfo, weaponInfo,
+                                        roomInfo, numberPlayers, unknownCards)
+            if(performance < bestGuessPerformance):
+                bestGuess = guess
+    return bestGuess
 
 def follow_responses(guess, playerNames, personInfo, weaponInfo, roomInfo):
     # After I make a guess check responses given for card indications.
@@ -657,10 +743,6 @@ def update_information(personInfo, weaponInfo, roomInfo, numberPlayers):
         cardsKnown[player] = (personCardsKnown[player] +
                               weaponCardsKnown[player] +
                               roomCardsKnown[player])
-    print("Updated info table")
-    print_info_table(personInfo, numberPlayers, 6)
-    print_info_table(weaponInfo, numberPlayers, 6)
-    print_info_table(roomInfo, numberPlayers, 9)
     return cardsKnown
 
 def get_initial_cards(playerNames):
