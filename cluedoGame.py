@@ -1,6 +1,7 @@
 from __future__ import print_function, division
 import random
 import math
+import copy
 
 def make_person_info(personList, playerNames):
     # Return a table of what is known about all persons held by each player.
@@ -90,7 +91,7 @@ def print_info_table(infoTable, numberPlayers, numberCards):
         for j in range(numberCards+1):
             print(str(infoTable[i][j]), end='')
             # Compute tabs needed.
-            tabs = int(columnTabs[j] - math.floor(len(str(infoTable[i][j]))/4))
+            tabs = int(columnTabs[j] - math.ceil(len(str(infoTable[i][j]))/4) + 1)
             for k in range(tabs):
                 print("\t", end='')
         print("\n", end='')
@@ -283,18 +284,23 @@ def update_info_table(infoTable, numberPlayers, numberCards):
 def get_candidate_cards(infoTable, unknownCards):
     # Fill in table with the number of cards which could correspond to each
     #option.
-    print("unknownCards")
-    print(unknownCards)
     numberPlayers = len(unknownCards)
     numberCards = len(infoTable[0][:])-1
     candidateTable = [[0 for col in range(numberCards+1)]
                       for row in range(numberPlayers+2)]
-    for player in range(numberPlayers):
+    # Calculate candidate cards for players.
+    for player in range(numberPlayers+1):
         for card in range(numberCards):
             if(infoTable[player+1][card+1] == -1):
+                # If card is known to not be owned then there are no cards.
                 candidateTable[player+1][card+1] = 0
+            elif(infoTable[player+1][card+1] == 1):
+                # If card is known to be owned then there is one card.
+                candidateTable[player+1][card+1] = 1
             else:
-                candidateTable[player+1][card+1] = unknownCards[player]
+                # If card is not known about then it could be any of this
+                #player's unknown cards.
+                candidateTable[player+1][card+1] = unknownCards[player-1]
     return candidateTable
 
 def get_option_weights(candidateTable, numberPlayers):
@@ -319,7 +325,8 @@ def distribution_information(probabilities):
     # Compute the information of a discrete distribution.
     informationSum = 0
     for i in range(len(probabilities)):
-        informationSum += -1*(probabilities[i]*math.log(probabilities[i]))
+        if(probabilities[i] > 0):
+            informationSum += -1*(probabilities[i]*math.log(probabilities[i]))
     return informationSum
 
 def compute_information(
@@ -356,17 +363,207 @@ def compute_information(
     totalInformation = personInformation + weaponInformation + roomInformation
     return totalInformation
 
+def rank_informations(
+    personCardInformation, weaponCardInformation, roomCardInformation):
+    # Sort card type by the information it gives.
+    cardType = ["person", "weapon", "room"]
+    informations = [personCardInformation, weaponCardInformation,
+                    roomCardInformation]
+    # High information means that less is known, the player showing cards
+    #prefers to show one with a high information.
+    preference = [""]*3
+    for i in range(3):
+        # Find highest info.
+        maxInfo = max(informations)
+        # Find index of largest info.
+        maxIndex = informations.index(maxInfo)
+        # Put this into preferenceTemp in order.
+        preference[i] = cardType[maxIndex]
+        # Replace max with a negative number.
+        # Information is always non-negative.
+        informations[maxIndex] = -1
+    return preference
+
+def find_first_show(infoTable, cardIndex, numberPlayers):
+    # Find which player can first show card.
+    # Check if I have card.
+    if(infoTable[1][cardIndex+1] == 1):
+        firstShow = 0
+        return firstShow
+    # Search other players for someone who can show.
+    for player in range(1, numberPlayers):
+        if(infoTable[player+1][cardIndex+1] != -1):
+            # If player isn't known to not have card then they can show.
+            firstShow = player
+            return firstShow
+    # If noboy was found then card is the solution.
+    firstShow = numberPlayers
+    return firstShow
+
+def card_shown_preference(
+    guess, personInfo, weaponInfo, roomInfo, numberPlayers, unknownCards,
+    currentInformation):
+    # Find which card the first player would prefer to show.
+    # The first player will show whichever card gives the least information.
+    # Make copy tables of information.
+    personInfoCopy = copy.deepcopy(personInfo)
+    weaponInfoCopy = copy.deepcopy(weaponInfo)
+    roomInfoCopy = copy.deepcopy(roomInfo)
+    # Find modify table as if each card is shown by first possible player.
+    whoShowsPerson = find_first_show(personInfoCopy, guess[0], numberPlayers)
+    add_card_seen(whoShowsPerson, personInfoCopy, guess[0], numberPlayers)
+    deduce_known_cards(personInfoCopy, numberPlayers, 6)
+    whoShowsWeapon = find_first_show(personInfoCopy, guess[0], numberPlayers)
+    add_card_seen(whoShowsWeapon, weaponInfoCopy, guess[1], numberPlayers)
+    deduce_known_cards(weaponInfoCopy, numberPlayers, 6)
+    whoShowsRoom = find_first_show(personInfoCopy, guess[0], numberPlayers)
+    add_card_seen(whoShowsRoom, roomInfoCopy, guess[2], numberPlayers)
+    deduce_known_cards(roomInfoCopy, numberPlayers, 9)
+    # Find information after each possible card shown.
+    personCardInformation = compute_information(personInfoCopy, weaponInfo,
+                                                roomInfo, unknownCards,
+                                                numberPlayers)
+    weaponCardInformation = compute_information(personInfo, weaponInfoCopy,
+                                                roomInfo, unknownCards,
+                                                numberPlayers)
+    roomCardInformation = compute_information(personInfo, weaponInfo,
+                                                roomInfoCopy, unknownCards,
+                                                numberPlayers)
+    cardPreference = rank_informations(
+    personCardInformation, weaponCardInformation, roomCardInformation)
+    return cardPreference
+
+def get_conditional_prob(
+    candidatesTable, playerShowing, cardIndex, prefModifier, numberPlayers,
+    numberCards, unknownCards):
+    # Calculate the chance of playerShowing showing the card cardIndex
+    #given that nobody before them showed anything.
+    # showingCards is the number of cards held by the player showing
+    #which could be the card asked.
+    showingCards = candidatesTable[playerShowing+1][cardIndex+1]
+    # solutionCards are the number of cards in the solution which could
+    #be the card asked.
+    solutionCards = candidatesTable[numberPlayers+1][cardIndex+1]
+    # allPlayersCards are the number of cards not belonging to the
+    #solution which could be the card asked.
+    allPlayersCards = 0
+    for player in range(playerShowing, numberPlayers):
+        allPlayersCards += candidatesTable[player+1][cardIndex+1]
+    # remainingPlayerCards are the number of cards belonging to those
+    #players after the one showing.
+    remainingPlayerCards = (allPlayersCards - showingCards)
+    # Subtract a modifier according to how many preferences have passed.
+    # If 2 preferences have passed then 2 cards must belong to the
+    #remaining players.
+    if(remainingPlayerCards < prefModifier):
+        modifiedRemaining = 0
+    else:
+        modifiedRemaining = remainingPlayerCards - prefModifier
+    realTotalCandidates = (showingCards + modifiedRemaining
+                           + solutionCards)
+    ##realTotalCandidates = allPlayersCandidates - candidatesAdjustment
+    ##denominator = max(realTotalCandidates, playerShowingCandidates)
+    if(realTotalCandidates > 0):
+        conditionalProb = (showingCards/realTotalCandidates)
+    else:
+        # If there are no candidates then I have the card.
+        conditionalProb = 0
+    if(conditionalProb > 1):
+        print("Warning conditional prob is greater than 1")
+        print("candidates table:\n", candidatesTable)
+        print("cardIndex", cardIndex)
+        print("playerShowing", playerShowing)
+        print("preferenceIndex", preferenceIndex)
+    if(conditionalProb < 0):
+        print("Warning conditional prob is less than 0")
+        print("candidates table:\n", candidatesTable)
+        print("cardIndex", cardIndex)
+        print("playerShowing", playerShowing)
+        print("preferenceIndex", preferenceIndex)
+    return conditionalProb
+
+def get_outcome_probabilities(
+    guess, preferences, personInfo, weaponInfo, roomInfo, unknownCards):
+    # Find the probability of every possible card shown after guessing.
+    # 3 outcomes for every other player and 1 outcome of nobody showing.    
+    personCandidates = get_candidate_cards(personInfo, unknownCards)
+    weaponCandidates = get_candidate_cards(weaponInfo, unknownCards)
+    roomCandidates = get_candidate_cards(roomInfo, unknownCards)
+    numberPlayers = len(unknownCards)
+    numberOutcomes = (3*numberPlayers)-2
+    # conditionalProbs is the probability of an outcome given than all
+    #prior outcomes have not happened.
+    conditionalProbs = [0]*numberOutcomes
+    preferenceModifiers = [0]*3
+    for player in range(1, numberPlayers):
+        preferenceModifiers = [0]*3
+        for cardType in range(3):
+            if(preferences[cardType] == "person"):
+                candidatesTable = personCandidates
+                cardIndex = guess[0]
+                numberCards = 6
+                # If I don't have this card then increase
+                #preferenceModifiers.
+                if(personInfo[1][guess[0]+1] == -1):
+                    for i in range(cardType+1, 3):
+                        preferenceModifiers[i] += 1
+            elif(preferences[cardType] == "weapon"):
+                candidatesTable = weaponCandidates
+                cardIndex = guess[1]
+                numberCards = 6
+                # If I don't have this card then increase
+                #preferenceModifiers.
+                if(weaponInfo[1][guess[1]+1] == -1):
+                    for i in range(cardType+1, 3):
+                        preferenceModifiers[i] += 1
+            else:
+                candidatesTable = roomCandidates
+                cardIndex = guess[2]
+                numberCards = 9
+                # If I don't have this card then increase
+                #preferenceModifiers.
+                if(roomInfo[1][guess[2]+1] == -1):
+                    for i in range(cardType+1, 3):
+                        preferenceModifiers[i] += 1
+            preferenceIndex = cardType
+            outcomeIndex = 3*(player-1) + cardType
+            prefModifier = preferenceModifiers[cardType]
+            conditionalProbs[outcomeIndex] = get_conditional_prob(candidatesTable, player,
+                                                    cardIndex, prefModifier,
+                                                    numberPlayers, numberCards,
+                                                    unknownCards)
+    # The conditional probability of nobody showing is 1.
+    conditionalProbs[numberOutcomes-1] = 1.0
+    # Find actual probabilities from conditional probabilities.
+    probabilities = [0]*numberOutcomes
+    cumulativeProb = 0
+    for i in range(0, numberOutcomes):
+        probabilities[i] = (1-cumulativeProb)*conditionalProbs[i]
+        cumulativeProb += probabilities[i]
+    print("Probabilities", probabilities)
+    return probabilities
+
 def find_best_guess(
     personInfo, weaponInfo, roomInfo, myRoom, numberPlayers, unknownCards):
     # Compute the guess which maximises the expected information gained.
-    compute_information(
-        personInfo, weaponInfo, roomInfo, unknownCards, numberPlayers)
+    # Find the current information of the solution cards.
+    currentInformation = compute_information(personInfo, weaponInfo, roomInfo,
+                                              unknownCards, numberPlayers)
+    
     # Until better algorithm is made use a random guess.
     guessPerson = random.randint(0,5)
     guessWeapon = random.randint(0,5)
     roomList = roomInfo[0][1:10]
     guessRoom = roomList.index(myRoom)
     guess = [guessPerson, guessWeapon, guessRoom]
+    
+    # Find the preference of cards shown to me.
+    preferences = card_shown_preference(guess, personInfo, weaponInfo,
+                                        roomInfo, numberPlayers, unknownCards,
+                                        currentInformation)
+    # Find the probability of each outcome of a guess.
+    get_outcome_probabilities(guess, preferences, personInfo, weaponInfo,
+                              roomInfo, unknownCards)
     return guess
 
 def follow_responses(guess, playerNames, personInfo, weaponInfo, roomInfo):
@@ -420,20 +617,20 @@ def follow_responses(guess, playerNames, personInfo, weaponInfo, roomInfo):
                     # If something was shown then end answering.
                     questioningActive = False
                 # Move to the next person.
-                answerIndex = ((answerIndex+1) % numberPlayers)
+            answerIndex = ((answerIndex+1) % numberPlayers)
 
 def me_questioning(
     personInfo, weaponInfo, roomInfo, playerNames, initialCards):
     # Update information and make a guess.
     numberPlayers = len(playerNames)
-    unknownCards = [0]*(numberPlayers+1)
+    unknownCards = [0]*(numberPlayers)
     knownCards = update_information(
         personInfo, weaponInfo, roomInfo, numberPlayers)    
     # Find number of unknown cards.
-    for i in range(numberPlayers):
-        unknownCards[i] = initialCards[i] - knownCards[i]
+    for i in range(1, numberPlayers):
+        unknownCards[i-1] = initialCards[i-1] - knownCards[i-1]
     # Set solution unknownCards to 1 because only 1 card is ever relevant.
-    unknownCards[numberPlayers] = 1
+    unknownCards[numberPlayers-1] = 1
 
     # Make a guess and record answers.
     myRoom = raw_input("\nWhat room am I in?")
