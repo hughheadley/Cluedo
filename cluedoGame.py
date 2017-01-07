@@ -284,10 +284,13 @@ def update_info_table(infoTable, numberPlayers, numberCards):
 def get_candidate_cards(infoTable, unknownCards):
     # Fill in table with the number of cards which could correspond to each
     #option.
-    numberPlayers = len(unknownCards)
+    numberPlayers = len(unknownCards)-1
     numberCards = len(infoTable[0][:])-1
     candidateTable = [[0 for col in range(numberCards+1)]
                       for row in range(numberPlayers+2)]
+    # Put titles into candidateTable.
+    candidateTable[0][:] = infoTable[0][:]
+    candidateTable[:][0] = infoTable[:][0]
     # Calculate candidate cards for players.
     for player in range(numberPlayers+1):
         for card in range(numberCards):
@@ -300,7 +303,7 @@ def get_candidate_cards(infoTable, unknownCards):
             else:
                 # If card is not known about then it could be any of this
                 #player's unknown cards.
-                candidateTable[player+1][card+1] = unknownCards[player-1]
+                candidateTable[player+1][card+1] = unknownCards[player]
     return candidateTable
 
 def get_option_weights(candidateTable, numberPlayers):
@@ -312,13 +315,26 @@ def get_option_weights(candidateTable, numberPlayers):
         sumCandidates = 0
         for player in range(numberPlayers+1):
             sumCandidates += candidateTable[player+1][card+1]
-        weights[card] = (solutionCandidates/sumCandidates)
+        if(sumCandidates==0):
+            # sumCandidates==0 only occurs when examining an impossible
+            #outcome of questioning.
+            # This only happens when card is not the solution. Therefore
+            #weight is 0.
+            weights[card] = 0
+        else:
+            weights[card] = (solutionCandidates/sumCandidates)
     return weights
 
 def get_option_probabilities(weights):
     # Convert weighted options into probabilities.
     weightsSum = sum(weights)
-    probabilities = [(weight/weightsSum) for weight in weights]
+    if(weightsSum == 0):
+        # If weightsSum is zero then no options are possible, this is
+        #due to an impossible outcome of the questioning being
+        #considered.
+        probabilities = [0]*len(weights)
+    else:
+        probabilities = [(weight/weightsSum) for weight in weights]
     return probabilities
 
 def distribution_information(probabilities):
@@ -342,7 +358,7 @@ def compute_information(
     # Compute information.
     personInformation = distribution_information(personProbs)
     
-    # Repeat computation for weapon. 
+    # Repeat computation for weapon.
     weaponCandidates = get_candidate_cards(weaponInfo, unknownCards)
     # Compute weights list of possible solutions.
     weaponWeights = get_option_weights(weaponCandidates, numberPlayers)
@@ -474,13 +490,13 @@ def get_conditional_prob(
         print("candidates table:\n", candidatesTable)
         print("cardIndex", cardIndex)
         print("playerShowing", playerShowing)
-        print("preferenceIndex", preferenceIndex)
+        print("prefModifier", prefModifier)
     if(conditionalProb < 0):
         print("Warning conditional prob is less than 0")
         print("candidates table:\n", candidatesTable)
         print("cardIndex", cardIndex)
         print("playerShowing", playerShowing)
-        print("preferenceIndex", preferenceIndex)
+        print("prefModifier", prefModifier)
     return conditionalProb
 
 def get_outcome_probabilities(
@@ -490,7 +506,7 @@ def get_outcome_probabilities(
     personCandidates = get_candidate_cards(personInfo, unknownCards)
     weaponCandidates = get_candidate_cards(weaponInfo, unknownCards)
     roomCandidates = get_candidate_cards(roomInfo, unknownCards)
-    numberPlayers = len(unknownCards)
+    numberPlayers = len(unknownCards)-1
     numberOutcomes = (3*numberPlayers)-2
     # conditionalProbs is the probability of an outcome given than all
     #prior outcomes have not happened.
@@ -541,7 +557,6 @@ def get_outcome_probabilities(
     for i in range(0, numberOutcomes):
         probabilities[i] = (1-cumulativeProb)*conditionalProbs[i]
         cumulativeProb += probabilities[i]
-    print("Probabilities", probabilities)
     return probabilities
 
 def get_outcome_informations(
@@ -603,7 +618,6 @@ def average_information(probabilities, informations):
     informationSum = 0
     for outcome in range(numberOutcomes):
         informationSum += (probabilities[outcome] * informations[outcome])
-    print("infosum", informationSum)
     return informationSum
 
 def evaluate_guess(
@@ -631,10 +645,6 @@ def find_best_guess(
     # Find the current information of the solution cards.
     currentInformation = compute_information(personInfo, weaponInfo, roomInfo,
                                               unknownCards, numberPlayers)
-    # Compare current information with uninformed information level.
-    uninformed = (2 * math.log(6)) + math.log(9)
-    percentComplete = round(100 * (1 - (currentInformation / uninformed)))
-    print("Currently", percentComplete, "percent complete")
     # Loop through all possible guesses. Find guess giving lowest
     #information.
     bestGuess = [0]*3
@@ -648,8 +658,17 @@ def find_best_guess(
             guess = [guessPerson, guessWeapon, guessRoom]
             performance = evaluate_guess(guess, personInfo, weaponInfo,
                                         roomInfo, numberPlayers, unknownCards)
+            print("guess", guess)
+            print("performance", performance)
             if(performance < bestGuessPerformance):
                 bestGuess = guess
+                bestGuessPerformance = performance
+            print("bestGuessPerformance", bestGuessPerformance)
+                
+    # Compare current information with uninformed information level.
+    uninformed = (2 * math.log(6)) + math.log(9)
+    percentComplete = round(100 * (1 - (currentInformation / uninformed)))
+    print("Currently", percentComplete, "percent complete")
     return bestGuess
 
 def follow_responses(guess, playerNames, personInfo, weaponInfo, roomInfo):
@@ -680,21 +699,19 @@ def follow_responses(guess, playerNames, personInfo, weaponInfo, roomInfo):
                 cardInvalid = True
                 while cardInvalid:
                     cardShown = raw_input("What card was shown?")
-                    cardIndex = -1
-                    myIndex = 0
                     if cardShown in personList:
                         cardIndex = personList.index(cardShown)
-                        add_card_seen(myIndex, personInfo, cardIndex,
+                        add_card_seen(answerIndex, personInfo, cardIndex,
                                       numberPlayers)
                         cardInvalid = False
                     elif cardShown in weaponList:
                         cardIndex = weaponList.index(cardShown)
-                        add_card_seen(myIndex, weaponInfo, cardIndex,
+                        add_card_seen(answerIndex, weaponInfo, cardIndex,
                                       numberPlayers)
                         cardInvalid = False
                     elif cardShown in roomList:
                         cardIndex = roomList.index(cardShown)
-                        add_card_seen(myIndex, roomInfo, cardIndex,
+                        add_card_seen(answerIndex, roomInfo, cardIndex,
                                       numberPlayers)
                         cardInvalid = False
                     else:
@@ -704,26 +721,6 @@ def follow_responses(guess, playerNames, personInfo, weaponInfo, roomInfo):
                     questioningActive = False
                 # Move to the next person.
             answerIndex = ((answerIndex+1) % numberPlayers)
-
-def me_questioning(
-    personInfo, weaponInfo, roomInfo, playerNames, initialCards):
-    # Update information and make a guess.
-    numberPlayers = len(playerNames)
-    unknownCards = [0]*(numberPlayers)
-    knownCards = update_information(
-        personInfo, weaponInfo, roomInfo, numberPlayers)    
-    # Find number of unknown cards.
-    for i in range(1, numberPlayers):
-        unknownCards[i-1] = initialCards[i-1] - knownCards[i-1]
-    # Set solution unknownCards to 1 because only 1 card is ever relevant.
-    unknownCards[numberPlayers-1] = 1
-
-    # Make a guess and record answers.
-    myRoom = raw_input("\nWhat room am I in?")
-    if(not (myRoom in ["0", "None", "none", "No", "no", "N", "n", ""])):
-        guess = find_best_guess(personInfo, weaponInfo, roomInfo, myRoom,
-                                numberPlayers, unknownCards)
-        follow_responses(guess, playerNames, personInfo, weaponInfo, roomInfo)
 
 def update_information(personInfo, weaponInfo, roomInfo, numberPlayers):
     improvements = True
@@ -744,6 +741,51 @@ def update_information(personInfo, weaponInfo, roomInfo, numberPlayers):
                               weaponCardsKnown[player] +
                               roomCardsKnown[player])
     return cardsKnown
+
+def get_my_room(questionMessage, roomList, nonRoomOptions):
+    nameValid = False
+    while(not nameValid):
+        myRoom = raw_input(questionMessage)
+        isRoom = myRoom in roomList
+        isNonRoom = myRoom in nonRoomOptions
+        if(isRoom):
+            nameValid = True
+        elif(isNonRoom):
+            nameValid = True
+            myRoom = "none"
+        else:
+            print("Cannot find the name " + myRoom)
+            print("Choose from:")
+            print(roomList)
+    return myRoom
+
+def me_questioning(
+    personInfo, weaponInfo, roomInfo, playerNames, initialCards):
+    # Update information and make a guess.
+    numberPlayers = len(playerNames)
+    unknownCards = [0]*(numberPlayers+1)
+    knownCards = update_information(
+        personInfo, weaponInfo, roomInfo, numberPlayers)    
+    # Find number of unknown cards.
+    for i in range(numberPlayers):
+        unknownCards[i] = initialCards[i] - knownCards[i]
+    # Set solution unknownCards to 1 because only 1 card is ever relevant.
+    unknownCards[numberPlayers] = 1
+    print("in me_questioning unknownCards", unknownCards)
+    print("in me_questioning knownCards", knownCards)
+    print("in me_questioning initialCards", initialCards)
+
+    # Set information about what room to go to.
+    roomList = roomInfo[0][1:10]
+    questionMessage = "\nWhat room am I in?"
+    nonRoomOptions = ["0", "None", "none", "No", "no", "N", "n", ""]
+    myRoom = get_my_room(questionMessage, roomList, nonRoomOptions)
+    
+    # Make a guess and record answers.
+    if(myRoom != "none"):
+        guess = find_best_guess(personInfo, weaponInfo, roomInfo, myRoom,
+                                numberPlayers, unknownCards)
+        follow_responses(guess, playerNames, personInfo, weaponInfo, roomInfo)
 
 def get_initial_cards(playerNames):
     # Get the initial number of cards that each person has.
