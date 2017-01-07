@@ -208,27 +208,38 @@ def follow_answers(
             answererName = playerNames[answerIndex]
             answer = raw_input("Did " + answererName + " show a card?")
             if(answer in ["0", "No", "no", "N", "n", ""]):
-                record_no_answer(
-                    guess, answerIndex, personInfo, weaponInfo, roomInfo)
+                record_no_answer(guess, answerIndex, personInfo, weaponInfo,
+                                 roomInfo)
+                # Move to the next person.
+                answerIndex = ((answerIndex+1) % numberPlayers)
             # If something was shown then end answering.
             else:
                 questioningActive = False
-            # Move to the next person.
-            answerIndex = ((answerIndex+1) % numberPlayers)
+    return answerIndex
 
 def other_questioning(
     questionerIndex, playerNames, personList, weaponList, roomList, personInfo,
-    weaponInfo, roomInfo):
-        questioner = playerNames[questionerIndex]
-        print("\n" + questioner + " is making a guess")
-        guess = get_guess(personList, weaponList, roomList)
-        # Check for the quit signal.
-        if(guess == "quit"):
-            return "quit"
-        # Follow those players giving answers.
-        follow_answers(guess, questionerIndex, playerNames, personList,
-                     weaponList, roomList, personInfo, weaponInfo, roomInfo)
-        return 0
+    weaponInfo, roomInfo, memories):
+    questioner = playerNames[questionerIndex]
+    print("\n" + questioner + " is making a guess")
+    guess = get_guess(personList, weaponList, roomList)
+    # Check for the quit signal.
+    if(guess == "quit"):
+        return "quit"
+    # Follow those players giving answers.
+    answerIndex = follow_answers(guess, questionerIndex, playerNames,
+                                 personList, weaponList, roomList,
+                                 personInfo, weaponInfo, roomInfo)
+    # Record memory if it was answered not by me.
+    validMemory = (answerIndex != 0) and (answerIndex != "none")
+    if(validMemory):
+        memory = [0]*4
+        memory[0] = answerIndex
+        memory[1] = guess[0]
+        memory[2] = guess[1]
+        memory[3] = guess[2]
+        memories.append(memory)
+    return 0
 
 def deduce_known_cards(infoTable, numberPlayers, numberCards):
     # Use deduction to find any known cards.
@@ -722,6 +733,42 @@ def follow_responses(guess, playerNames, personInfo, weaponInfo, roomInfo):
                 # Move to the next person.
             answerIndex = ((answerIndex+1) % numberPlayers)
 
+def use_memories(personInfo, weaponInfo, roomInfo, memories, numberPlayers):
+    memoryCount = len(memories)
+    # Use previously answered questions to discover extra cards.
+    print("All memories", memories)
+    for i in range(memoryCount):
+        answerIndex = memories[i][0]
+        person = memories[i][1]
+        weapon = memories[i][2]
+        room = memories[i][3]
+        if(personInfo[answerIndex+1][person+1] == -1):
+            personOwned = 0
+        else:
+            personOwned = 1
+        if(weaponInfo[answerIndex+1][weapon+1] == -1):
+            weaponOwned = 0
+        else:
+            weaponOwned = 1
+        if(roomInfo[answerIndex+1][room+1] == -1):
+            roomOwned = 0
+        else:
+            roomOwned = 1
+        # If two of the three cards are not owned then the third must have
+        #been shown.
+        if((personOwned + weaponOwned) == 0):
+            add_card_seen(answerIndex, roomInfo, room, numberPlayers)
+        elif((personOwned + roomOwned) == 0):
+            add_card_seen(answerIndex, weaponInfo, weapon, numberPlayers)
+        elif((roomOwned + weaponOwned) == 0):
+            add_card_seen(answerIndex, personInfo, person, numberPlayers)
+        print("personOwned",personOwned)
+        print("weaponOwned",weaponOwned)
+        print("roomOwned",roomOwned)
+        print(personInfo)
+        print(weaponInfo)
+        print(roomInfo)
+
 def update_information(personInfo, weaponInfo, roomInfo, numberPlayers):
     improvements = True
     while(improvements):
@@ -782,10 +829,13 @@ def show_room_preference(roomInfo, unknownCards):
     print(roomProbsTemp)
 
 def me_questioning(
-    personInfo, weaponInfo, roomInfo, playerNames, initialCards):
+    personInfo, weaponInfo, roomInfo, playerNames, initialCards, memories,
+    useMemory):
     # Update information and make a guess.
     numberPlayers = len(playerNames)
     unknownCards = [0]*(numberPlayers+1)
+    if(useMemory):
+        use_memories(personInfo, weaponInfo, roomInfo, memories, numberPlayers)
     knownCards = update_information(
         personInfo, weaponInfo, roomInfo, numberPlayers)    
     # Find number of unknown cards.
@@ -826,7 +876,7 @@ def get_initial_cards(playerNames):
             initialCards[(startDealIndex+i)%numberPlayers] += 1
     return initialCards
 
-def play_cluedo(playerNames):
+def play_cluedo(playerNames, useMemory=False):
     # Play a game of Cluedo and suggest guesses.
     print("Names of those playing are:")
     for name in playerNames:
@@ -844,9 +894,9 @@ def play_cluedo(playerNames):
     roomInfo = make_room_info(roomList, playerNames)
 
     # Add my cards to the tables of information.
-    get_my_cards(
-        personList, weaponList, roomList, personInfo, weaponInfo, roomInfo,
-        numberPlayers)
+    get_my_cards(personList, weaponList, roomList, personInfo, weaponInfo,
+                 roomInfo, numberPlayers)
+    memories = []
 
     # Begin the questioning.
     startIndex = get_starting_index(playerNames)
@@ -855,15 +905,20 @@ def play_cluedo(playerNames):
     while(not gameOver):
         if(questionerIndex != 0):
             # If questioner is not me then record what is asked.
-            quitSignal = other_questioning(
-                questionerIndex, playerNames, personList, weaponList, roomList,
-                personInfo, weaponInfo, roomInfo)
+            quitSignal = other_questioning(questionerIndex, playerNames,
+                                           personList, weaponList, roomList,
+                                           personInfo, weaponInfo, roomInfo,
+                                           memories)
             if(quitSignal == "quit"):
                 gameOver = True
         else:
-            me_questioning(
-                personInfo, weaponInfo, roomInfo, playerNames, initialCards)
+            print(personInfo)
+            print(weaponInfo)
+            print(roomInfo)
+            me_questioning(personInfo, weaponInfo, roomInfo, playerNames,
+                           initialCards, memories, useMemory)
         questionerIndex = ((questionerIndex + 1) % numberPlayers)
 
 names = ["Me", "Alona", "Christian"]
-play_cluedo(names)
+useMemory = True
+play_cluedo(names, useMemory)
