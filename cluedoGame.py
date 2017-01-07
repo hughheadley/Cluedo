@@ -759,6 +759,28 @@ def get_my_room(questionMessage, roomList, nonRoomOptions):
             print(roomList)
     return myRoom
 
+def show_room_preference(roomInfo, unknownCards):
+    # Show the order of rooms which are best to go to.
+    numberPlayers = len(unknownCards)-1
+    roomCandidates = get_candidate_cards(roomInfo, unknownCards)
+    # Compute weights list of possible solutions.
+    roomWeights = get_option_weights(roomCandidates, numberPlayers)
+    # Compute probability of possible solutions.
+    roomProbs = get_option_probabilities(roomWeights)
+    roomList = roomInfo[0][1:10]
+    # Sort a list of rooms by decreasing probability.
+    tempRooms = [0]*9
+    roomProbsTemp = [0]*9
+    for i in range(9):
+        maxProb = max(roomProbs)
+        bestRoomIndex = roomProbs.index(maxProb)
+        tempRooms[i] = roomList[bestRoomIndex]
+        roomProbsTemp[i] = round(roomProbs[bestRoomIndex], 2)
+        # Prevent this room from being the max again
+        roomProbs[bestRoomIndex] = -1
+    print(tempRooms)
+    print(roomProbsTemp)
+
 def me_questioning(
     personInfo, weaponInfo, roomInfo, playerNames, initialCards):
     # Update information and make a guess.
@@ -777,6 +799,7 @@ def me_questioning(
 
     # Set information about what room to go to.
     roomList = roomInfo[0][1:10]
+    show_room_preference(roomInfo, unknownCards)
     questionMessage = "\nWhat room am I in?"
     nonRoomOptions = ["0", "None", "none", "No", "no", "N", "n", ""]
     myRoom = get_my_room(questionMessage, roomList, nonRoomOptions)
