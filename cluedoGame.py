@@ -706,12 +706,9 @@ def find_best_guess(
             guess = [guessPerson, guessWeapon, guessRoom]
             performance = evaluate_guess(guess, personInfo, weaponInfo,
                                         roomInfo, numberPlayers, unknownCards)
-            print("guess", guess)
-            print("performance", performance)
             if(performance < bestGuessPerformance):
                 bestGuess = guess
                 bestGuessPerformance = performance
-            print("bestGuessPerformance", bestGuessPerformance)
     return bestGuess
 
 def follow_responses(guess, playerNames, personInfo, weaponInfo, roomInfo):
@@ -847,6 +844,7 @@ def show_room_preference(roomInfo, unknownCards):
     # Compute probability of possible solutions.
     roomProbs = get_option_probabilities(roomWeights)
     roomList = roomInfo[0][1:10]
+    
     # Sort a list of rooms by decreasing probability.
     tempRooms = [0]*9
     roomProbsTemp = [0]*9
@@ -871,7 +869,7 @@ def get_rooms_in_reach(myRoom, roll, roomList, roomTravelDistance):
             reachableRooms.append(i)
     return reachableRooms
 
-def get_room_info(
+def get_room_performance(
     guessRoom, personInfo, weaponInfo, roomInfo, numberPlayers, unknownCards):
     bestGuessPerformance = 100
     for person in range(6):
@@ -879,9 +877,6 @@ def get_room_info(
             guessPerson = person
             guessWeapon = weapon
             guess = [guessPerson, guessWeapon, guessRoom]
-            print("room person", guessPerson)
-            print("room weapon", guessWeapon)
-            print("room guess", guessRoom)
             performance = evaluate_guess(guess, personInfo, weaponInfo,
                                          roomInfo, numberPlayers,
                                          unknownCards)
@@ -897,8 +892,9 @@ def find_indirect_route(
     roomPerformances = []
     # Find performance of every room.
     for room in range(9):
-        performance = get_room_info(room, personInfo, weaponInfo, roomInfo,
-                                    numberPlayers, unknownCards)
+        performance = get_room_performance(room, personInfo, weaponInfo,
+                                           roomInfo, numberPlayers,
+                                           unknownCards)
         roomPerformances.append(performance)
         
     # Find the closest of the rooms with best performance.
@@ -911,6 +907,7 @@ def find_indirect_route(
         isCloser = (effectiveDistance[currentRoom][room] < shortestTravel)
         if(isBestPerformance and isCloser):
             closestBestRoom = room
+            shortestTravel = effectiveDistance[currentRoom][room]
 
     # Check if I can move to any room that is closer to the closest
     #best room.
@@ -927,13 +924,14 @@ def find_indirect_route(
         # If all reachable rooms are farther from the closestBestRoom
         #then ask to move towards it through the corridor.
         print("Move towards " , closestBestRoom)
+    print("find_indirect_route returns ", closerRoom)
     return closerRoom
 
 def decide_room_movement(
     currentInformation, reachableRooms, personInfo, weaponInfo, roomInfo,
-    unknownCards):
+    unknownCards, numberPlayers):
     roomList = roomInfo[0][1:10]
-    numberPlayers = len(roomInfo[:][0])-2
+    moveToRoom = 5
     # Considering possible information gain choose a room to move to.
     print("I can reach rooms")
     for i in range(len(reachableRooms)):
@@ -943,18 +941,22 @@ def decide_room_movement(
     roomPerformances = []
     for i in range(len(reachableRooms)):
         guessRoom = reachableRooms[i]
-        performance = get_room_info(guessRoom, personInfo, weaponInfo,
+        performance = get_room_performance(guessRoom, personInfo, weaponInfo,
                                     roomInfo, numberPlayers, unknownCards)
         roomPerformances.append(performance)
     # If any of the reachable rooms create information then go to best.
     bestPerformance = min(roomPerformances)
     if(bestPerformance < currentInformation):
         # The best room allows to get information better than current.
-        moveToRoom = roomPerformances.index(bestPerformance)
+        reachableRoomIndex = roomPerformances.index(bestPerformance)
+        moveToRoomIndex = reachableRooms[reachableRoomIndex]
+        moveToRoom = roomList[moveToRoomIndex]
     else:
-        moveToRoom = find_indirect_route(currentRoom, reachableRooms,
+        moveToRoomIndex = find_indirect_route(currentRoom, reachableRooms,
                                          personInfo, weaponInfo, roomInfo,
                                          unknownCards, effectiveDistance)
+        moveToRoom = roomList[moveToRoomIndex]
+    print("decide_room_movement returns ", moveToRoom)
     return moveToRoom
 
 def make_movement(
@@ -962,6 +964,7 @@ def make_movement(
     roomEffectiveDistance, roomTravelDistance):
     # Decide which room to move to next.
     roomList = roomInfo[0][1:10]
+    numberPlayers = len(unknownCards)-1
     show_room_preference(roomInfo, unknownCards)
     questionMessage = "\nWhat room am I in?"
     nonRoomOptions = ["0", "None", "none", "No", "no", "N", "n", ""]
@@ -973,7 +976,7 @@ def make_movement(
         print("Keep moving towards the room I was trying to get to")
         corridorInput = raw_input("Am I still in the corridor?")
         inCorridorEntries = ["y", "Y", "yes", "Yes", "1"]
-        if not corridorInput in inCorridorEntries:
+        if not(corridorInput in inCorridorEntries):
             # Check if I rolled enough to get to target room.
             questionMessage = "\nWhat room am I in now?"
             newRoom = get_my_room(questionMessage, roomList, nonRoomOptions)
@@ -987,15 +990,14 @@ def make_movement(
                                             roomTravelDistance)
         newRoom = decide_room_movement(currentInformation, reachableRooms,
                                        personInfo, weaponInfo, roomInfo,
-                                       unknownCards)
+                                       unknownCards, numberPlayers)
     # Announce where I'm moving.
     if(newRoom != "none"):
-        print("Move to", newRoom)
+        print("\nMove to", newRoom, "\n")
     return newRoom
 
-def make_accusation(personInfo, weaponInfo, roomInfo):
+def make_accusation(personInfo, weaponInfo, roomInfo, numberPlayers):
     # Find the solution and announce it.
-    numberPlayers = len(roomInfo[:][0])-2
     solutionPesonInfo = personInfo[numberPlayers+1][:]
     # The correct person has an info value of 1.
     personIndex = solutionPersonInfo.index(1)
@@ -1035,17 +1037,16 @@ def me_questioning(
     percentComplete = int(100 * (1 - (currentInformation / uninformed)))
     print("\n\nCurrently", percentComplete, "percent complete\n")
     if(currentInformation == 0):
-        make_accusation(personInfo, weaponInfo, roomInfo)
+        make_accusation(personInfo, weaponInfo, roomInfo, numberPlayers)
 
     # Decide which room to go to.
     roomList = roomInfo[0][1:10]
-    show_room_preference(roomInfo, unknownCards)
     questionMessage = "\nWhat room am I in?"
     nonRoomOptions = ["0", "None", "none", "No", "no", "N", "n", ""]
-    myRoom = get_my_room(questionMessage, roomList, nonRoomOptions)
-    ##myRoom = make_movement(personInfo, weaponInfo, roomInfo,
-                           #currentInformation, unknownCards,
-                           #roomEffectiveDistance, roomTravelDistance)
+    #myRoom = get_my_room(questionMessage, roomList, nonRoomOptions)
+    myRoom = make_movement(personInfo, weaponInfo, roomInfo,
+                           currentInformation, unknownCards,
+                           roomEffectiveDistance, roomTravelDistance)
     
     # Make a guess and record answers.
     if(myRoom != "none"):
