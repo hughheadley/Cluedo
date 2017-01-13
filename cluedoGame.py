@@ -187,6 +187,38 @@ def record_no_answer(guess, answerIndex, personInfo, weaponInfo, roomInfo):
     weaponInfo[answerIndex+1][guess[1]+1] = -1
     roomInfo[answerIndex+1][guess[2]+1] = -1
 
+def print_many_lines(numLines = 38):
+    for i in range(numLines):
+        print("")
+
+def check_to_show_card(guess, personInfo, weaponInfo, roomInfo):
+    # Check my cards to see what can be shown.
+    guessPersonIndex = guess[0]
+    guessWeaponIndex = guess[1]
+    guessRoomIndex = guess[2]
+    answer = "N"
+    # Prefer to show weapon then person then room.
+    if(weaponInfo[1][guessWeaponIndex+1] == 1):
+        print_many_lines()
+        print("Show weapon:", weaponInfo[0][guessWeaponIndex+1])
+        temp = raw_input("Enter anything to continue")
+        answer = "Y"
+    elif(personInfo[1][guessPersonIndex+1] == 1):
+        print_many_lines()
+        print("Show person:", personInfo[0][guessPersonIndex+1])
+        temp = raw_input("Enter anything to continue")
+        answer = "Y"
+    elif(roomInfo[1][guessRoomIndex+1] == 1):
+        print_many_lines()
+        print("Show room:", roomInfo[0][guessRoomIndex+1])
+        temp = raw_input("Enter anything to continue")
+        answer = "Y"
+    else:
+        print("I have nothing to show you")
+        print_many_lines()
+        temp = raw_input("Enter anything to continue")
+    return answer
+
 def follow_answers(
     guess, questionerIndex, playerNames, personList, weaponList, roomList,
     personInfo, weaponInfo, roomInfo):
@@ -204,9 +236,14 @@ def follow_answers(
         if(answerIndex == questionerIndex):
             questioningActive = False
         else:
-            # If it is not me to answer then note if nothing is shown.
             answererName = playerNames[answerIndex]
-            answer = raw_input("Did " + answererName + " show a card?")
+            answer = "N"
+            if(answerIndex == 0):
+                answer = check_to_show_card(guess, personInfo, weaponInfo,
+                                            roomInfo)
+            else:
+                answer = raw_input("Did " + answererName + " show a card?")
+            # Note if nothing is shown by somebody.
             if(answer in ["0", "No", "no", "N", "n", ""]):
                 record_no_answer(guess, answerIndex, personInfo, weaponInfo,
                                  roomInfo)
@@ -675,11 +712,6 @@ def find_best_guess(
                 bestGuess = guess
                 bestGuessPerformance = performance
             print("bestGuessPerformance", bestGuessPerformance)
-                
-    # Compare current information with uninformed information level.
-    uninformed = (2 * math.log(6)) + math.log(9)
-    percentComplete = round(100 * (1 - (currentInformation / uninformed)))
-    print("Currently", percentComplete, "percent complete")
     return bestGuess
 
 def follow_responses(guess, playerNames, personInfo, weaponInfo, roomInfo):
@@ -828,6 +860,125 @@ def show_room_preference(roomInfo, unknownCards):
     print(tempRooms)
     print(roomProbsTemp)
 
+def get_rooms_in_reach(myRoom, roll, roomList, roomTravelDistance):
+    # Return a list of indices of rooms which can be reached with this
+    #dice roll.
+    roomIndex = roomList.index(myRoom)
+    reachableRooms = []
+    for i in range(len(roomList)):
+        if(roomTravelDistance[roomIndex][i] <= roll):
+            # Append the index of a room if it can be reached.
+            reachableRooms.append(i)
+    return reachableRooms
+
+def get_room_info(
+    guessRoom, personInfo, weaponInfo, roomInfo, numberPlayers, unknownCards):
+    bestGuessPerformance = 100
+    for person in range(6):
+        for weapon in range(6):
+            guessPerson = person
+            guessWeapon = weapon
+            guess = [guessPerson, guessWeapon, guessRoom]
+            performance = evaluate_guess(guess, personInfo, weaponInfo,
+                                         roomInfo, numberPlayers,
+                                         unknownCards)
+            if(performance < bestGuessPerformance):
+                bestGuess = guess
+                bestGuessPerformance = performance
+    return bestGuessPerformance
+
+def find_indirect_route(
+    currentRoom, reachableRooms, personInfo, weaponInfo, roomInfo,
+    unknownCards, effectiveDistance):
+    # Move towards the best room, move to a closer room if possible.
+    roomPerformances = []
+    # Find performance of every room.
+    for room in range(9):
+        performance = get_room_info(room, personInfo, weaponInfo, roomInfo,
+                                    numberPlayers, unknownCards)
+        roomPerformances.append(performance)
+        
+    # Find the closest of the rooms with best performance.
+    bestPerformance = min(roomPerformances)
+    shortestTravel = 100
+    bestPerformers = []
+    closestBestRoom = currentRoom
+    for room in range(9):
+        isBestPerformance = (roomPerformances[room] == bestPerformance)
+        isCloser = (effectiveDistance[currentRoom][room] < shortestTravel)
+        if(isBestPerformance and isCloser):
+            closestBestRoom = room
+
+    # Check if I can move to any room that is closer to the closest
+    #best room.
+    travelFromCurrent = effectiveDistance[currentRoom][closestRoom]
+    closerRoomPossible = False
+    closerRoom = "None"
+    for i in range(len(reachableRooms)):
+        room = reachableRooms[i]
+        travelFromRoom = effectiveDistance[room][closestRoom]
+        if(travelFromRoom < travelFromCurrent):
+            closerRoomPossible = True
+            closerRoom = room
+    if(closerRoom == "None"):
+        print("Move towards " , closestBestRoom)
+    return closerRoom
+
+def decide_room_movement(
+    currentInformation, reachableRooms, personInfo, weaponInfo, roomInfo,
+    unknownCards):
+    roomList = roomInfo[0][1:10]
+    numberPlayers = len(roomInfo[:][0])-2
+    # Considering possible information gain choose a room to move to.
+    print("I can reach rooms")
+    for i in range(len(reachableRooms)):
+        print(roomList[reachableRooms[i]])
+    # For all reachable rooms check the information that can be gained
+    #from asking a question in that room.
+    roomPerformances = []
+    for i in range(len(reachableRooms)):
+        guessRoom = reachableRooms[i]
+        performance = get_room_info(guessRoom, personInfo, weaponInfo,
+                                    roomInfo, numberPlayers, unknownCards)
+        roomPerformances.append(performance)
+    # If any of the reachable rooms create information then go to best.
+    bestPerformance = min(roomPerformances)
+    if(bestPerformance < currentInformation):
+        # The best room allows to get information better than current.
+        moveToRoom = roomPerformances.index(bestPerformance)
+        return moveToRoom
+    else:
+        find_indirect_route()
+
+def make_movement(
+    roomInfo, unknownCards, roomEffectiveDistance, roomTravelDistance):
+    # Decide which room to move to next.
+    roomList = roomInfo[0][1:10]
+    show_room_preference(roomInfo, unknownCards)
+    questionMessage = "\nWhat room am I in?"
+    nonRoomOptions = ["0", "None", "none", "No", "no", "N", "n", ""]
+    myRoom = get_my_room(questionMessage, roomList, nonRoomOptions)
+    roll = 0
+    if(myRoom == "none"):
+        # If in corridor try to move to the room I was previously going
+        #towards.
+        print("Keep moving towards the room I was trying to get to")
+        corridorInput = raw_input("Am I still in the corridor?")
+        inCorridorEntries = ["y", "Y", "yes", "Yes", "1"]
+        if not corridorInput in inCorridorEntries:
+            # Check if I rolled enough to get to target room.
+            questionMessage = "\nWhat room am I in now?"
+            myRoom = get_my_room(questionMessage, roomList, nonRoomOptions)
+        else:
+            # Skip this turn to ask a question.
+            myRoom = "none"
+    else:
+        rollString = raw_input("How much did I roll?\n")
+        roll = int(rollString)
+        reachableRooms = get_rooms_in_reach(myRoom, roll, roomList,
+                                            roomTravelDistance)
+        decide_room_movement(reachableRooms, personInfo, weaponInfo, roomInfo)
+
 def me_questioning(
     personInfo, weaponInfo, roomInfo, playerNames, initialCards, memories,
     useMemory):
@@ -843,11 +994,15 @@ def me_questioning(
         unknownCards[i] = initialCards[i] - knownCards[i]
     # Set solution unknownCards to 1 because only 1 card is ever relevant.
     unknownCards[numberPlayers] = 1
-    print("in me_questioning unknownCards", unknownCards)
-    print("in me_questioning knownCards", knownCards)
-    print("in me_questioning initialCards", initialCards)
+    
+    # Compare current information with uninformed information level.
+    uninformed = (2 * math.log(6)) + math.log(9)    
+    currentInformation = compute_information(personInfo, weaponInfo, roomInfo,
+                                              unknownCards, numberPlayers)
+    percentComplete = int(100 * (1 - (currentInformation / uninformed)))
+    print("Currently", percentComplete, "percent complete")
 
-    # Set information about what room to go to.
+    # Decide which room to go to.
     roomList = roomInfo[0][1:10]
     show_room_preference(roomInfo, unknownCards)
     questionMessage = "\nWhat room am I in?"
@@ -876,7 +1031,9 @@ def get_initial_cards(playerNames):
             initialCards[(startDealIndex+i)%numberPlayers] += 1
     return initialCards
 
-def play_cluedo(playerNames, useMemory=False):
+def play_cluedo(
+    playerNames, personList, weaponList, roomList, expectedDistance,
+    travelDistance, useMemory=False):
     # Play a game of Cluedo and suggest guesses.
     print("Names of those playing are:")
     for name in playerNames:
@@ -884,13 +1041,8 @@ def play_cluedo(playerNames, useMemory=False):
     numberPlayers = len(playerNames)
     initialCards = get_initial_cards(playerNames)
     # Create initial information lists.
-    personList = ["Green", "Mustard", "Orchid", "Peacock", "Plum", "Scarlet"]
     personInfo = make_person_info(personList, playerNames)
-    weaponList = ["Candlestick", "Dagger", "Lead pipe", "Revolver", "Rope",
-                  "Wrench"]
     weaponInfo = make_weapon_info(weaponList, playerNames)
-    roomList = ["Ballroom", "Billiard", "Conservatory", "Dining", "Hall",
-                "Kitchen", "Library", "Lounge", "Study"]
     roomInfo = make_room_info(roomList, playerNames)
 
     # Add my cards to the tables of information.
@@ -920,5 +1072,21 @@ def play_cluedo(playerNames, useMemory=False):
         questionerIndex = ((questionerIndex + 1) % numberPlayers)
 
 names = ["Me", "Alona", "Christian"]
+personList = ["Green", "Mustard", "Orchid", "Peacock", "Plum", "Scarlet"]
+weaponList = ["Candlestick", "Dagger", "Lead pipe", "Revolver", "Rope",
+              "Wrench"]
+roomList = ["Ballroom", "Billiard", "Conservatory", "Dining", "Hall",
+            "Kitchen", "Library", "Lounge", "Study"]
+roomEffectiveDistance = [[0,6,5,7,15,7,12,12,14],[6,0,6,14,15,17,4,13,16],
+                         [5,6,0,11,15,19,17,0,19],[7,14,11,0,8,11,14,4,17],
+                         [15,15,15,8,0,17,7,8,10],[7,17,19,11,17,0,14,19,0],
+                         [12,4,17,14,7,14,0,14,7],[12,13,0,4,8,19,14,0,17],
+                         [14,16,19,17,10,0,7,17,0]]
+roomTravelDistance = [[0,6,5,7,15,7,12,15,17],[6,0,6,14,15,17,4,22,15],
+                      [5,6,0,18,19,19,13,0,19],[7,14,18,0,8,11,14,4,17],
+                      [15,15,19,8,0,19,7,8,10],[7,17,19,11,19,0,23,19,0],
+                      [12,4,13,14,7,23,0,14,7],[15,22,0,4,8,19,14,0,17],
+                      [17,15,19,17,10,0,7,17,0]]
 useMemory = True
-play_cluedo(names, useMemory)
+play_cluedo(names, personList, weaponList, roomList, roomEffectiveDistance,
+            roomTravelDistance, useMemory)
