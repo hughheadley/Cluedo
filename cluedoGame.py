@@ -191,21 +191,25 @@ def check_to_show_card(guess, personInfo, weaponInfo, roomInfo):
         print_many_lines()
         print("Show weapon:", weaponInfo[0][guessWeaponIndex+1])
         temp = raw_input("Enter anything to continue")
+        print_many_lines()
         answer = "Y"
     elif(personInfo[1][guessPersonIndex+1] == 1):
         print_many_lines()
         print("Show person:", personInfo[0][guessPersonIndex+1])
         temp = raw_input("Enter anything to continue")
+        print_many_lines()
         answer = "Y"
     elif(roomInfo[1][guessRoomIndex+1] == 1):
         print_many_lines()
         print("Show room:", roomInfo[0][guessRoomIndex+1])
         temp = raw_input("Enter anything to continue")
+        print_many_lines()
         answer = "Y"
     else:
         print("I have nothing to show you")
         print_many_lines()
         temp = raw_input("Enter anything to continue")
+        print_many_lines()
     return answer
 
 def follow_answers(
@@ -899,7 +903,7 @@ def get_room_performance(
 
 def find_indirect_route(
     currentRoom, reachableRooms, personInfo, weaponInfo, roomInfo,
-    unknownCards, effectiveDistance):
+    unknownCards, effectiveDistance, numberPlayers):
     # Move towards the best room, move to a closer room if possible.
     roomPerformances = []
     # Find performance of every room.
@@ -910,40 +914,43 @@ def find_indirect_route(
         roomPerformances.append(performance)
         
     # Find the closest of the rooms with best performance.
+    roomList = roomInfo[0][1:10]
+    currentRoomIndex = roomList.index(currentRoom)
     bestPerformance = min(roomPerformances)
     shortestTravel = 100
     bestPerformers = []
-    closestBestRoom = currentRoom
+    closestBestRoom = roomList[currentRoomIndex]
     for room in range(9):
         isBestPerformance = (roomPerformances[room] == bestPerformance)
-        isCloser = (effectiveDistance[currentRoom][room] < shortestTravel)
+        isCloser = (effectiveDistance[currentRoomIndex][room] < shortestTravel)
         if(isBestPerformance and isCloser):
-            closestBestRoom = room
-            shortestTravel = effectiveDistance[currentRoom][room]
+            closestBestRoomIndex = room
+            closestBestRoom = roomList[closestBestRoomIndex]
+            shortestTravel = effectiveDistance[currentRoomIndex][room]
 
     # Check if I can move to any room that is closer to the closest
     #best room.
-    travelFromCurrent = effectiveDistance[currentRoom][closestRoom]
+    travelFromCurrent = effectiveDistance[currentRoomIndex][closestBestRoomIndex]
     closerRoomPossible = False
     closerRoom = "none"
     for i in range(len(reachableRooms)):
-        room = reachableRooms[i]
-        travelFromRoom = effectiveDistance[room][closestRoom]
+        roomIndex = reachableRooms[i]
+        travelFromRoom = effectiveDistance[roomIndex][closestBestRoomIndex]
         if(travelFromRoom < travelFromCurrent):
             closerRoomPossible = True
-            closerRoom = room
-    if(closerRoom == "None"):
+            closerRoom = roomIndex
+    if(closerRoom == "none"):
         # If all reachable rooms are farther from the closestBestRoom
         #then ask to move towards it through the corridor.
-        print("Move towards " , closestBestRoom)
+        print("\nMove towards " , closestBestRoom, "\n")
     print("find_indirect_route returns ", closerRoom)
     return closerRoom
 
 def decide_room_movement(
     currentInformation, reachableRooms, personInfo, weaponInfo, roomInfo,
-    unknownCards, numberPlayers):
+    unknownCards, numberPlayers, currentRoom, effectiveDistance):
     roomList = roomInfo[0][1:10]
-    moveToRoom = 5
+    moveToRoom = 0
     # Considering possible information gain choose a room to move to.
     print("I can reach rooms")
     for i in range(len(reachableRooms)):
@@ -961,13 +968,20 @@ def decide_room_movement(
     if(bestPerformance < currentInformation):
         # The best room allows to get information better than current.
         reachableRoomIndex = roomPerformances.index(bestPerformance)
+        print("reachableRooms", reachableRooms)
+        print("reachableRoomIndex", reachableRoomIndex)
+        print("roomList", roomList)
         moveToRoomIndex = reachableRooms[reachableRoomIndex]
         moveToRoom = roomList[moveToRoomIndex]
     else:
         moveToRoomIndex = find_indirect_route(currentRoom, reachableRooms,
                                          personInfo, weaponInfo, roomInfo,
-                                         unknownCards, effectiveDistance)
-        moveToRoom = roomList[moveToRoomIndex]
+                                         unknownCards, effectiveDistance,
+                                              numberPlayers)
+        if(moveToRoomIndex == "none"):
+            moveToRoom = "none"
+        else:
+            moveToRoom = roomList[moveToRoomIndex]
     print("decide_room_movement returns ", moveToRoom)
     return moveToRoom
 
@@ -1002,7 +1016,8 @@ def make_movement(
                                             roomTravelDistance)
         newRoom = decide_room_movement(currentInformation, reachableRooms,
                                        personInfo, weaponInfo, roomInfo,
-                                       unknownCards, numberPlayers)
+                                       unknownCards, numberPlayers, myRoom,
+                                       roomEffectiveDistance)
     # Announce where I'm moving.
     if(newRoom != "none"):
         print("\nMove to", newRoom, "\n")
