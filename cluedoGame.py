@@ -262,7 +262,8 @@ def other_questioning(
         else:
             print("That isn't a valid room. Choose one from:")
             print(roomList)
-    guess = get_guess(personList, weaponList, room)
+    roomIndex = roomList.index(room)
+    guess = get_guess(personList, weaponList, roomIndex)
     # Follow those players giving answers.
     answerIndex = follow_answers(guess, questionerIndex, playerNames,
                                  personList, weaponList, roomList,
@@ -695,7 +696,7 @@ def find_best_guess(
                                               unknownCards, numberPlayers)
     # Loop through all possible guesses. Find guess giving lowest
     #information.
-    bestGuess = [0]*3
+    bestGuesses = []
     bestGuessPerformance = 100
     roomList = roomInfo[0][1:10]
     guessRoom = roomList.index(myRoom)
@@ -707,8 +708,19 @@ def find_best_guess(
             performance = evaluate_guess(guess, personInfo, weaponInfo,
                                         roomInfo, numberPlayers, unknownCards)
             if(performance < bestGuessPerformance):
-                bestGuess = guess
+                # If this is better than all previous guesses then remove
+                #previous guesses and append current guess.
+                bestGuesses = []
+                bestGuesses.append(guess)
                 bestGuessPerformance = performance
+            elif(performance == bestGuessPerformance):
+                # If this is as good as the best found so far then
+                #append this guess as an option to ask.
+                bestGuesses.append(guess)
+    # Choose randomly from all bestGuesses options.
+    numberOptions = len(bestGuesses)
+    randomInt = random.randint(0, numberOptions-1)
+    bestGuess = bestGuesses[randomInt]
     return bestGuess
 
 def follow_responses(guess, playerNames, personInfo, weaponInfo, roomInfo):
@@ -998,7 +1010,7 @@ def make_movement(
 
 def make_accusation(personInfo, weaponInfo, roomInfo, numberPlayers):
     # Find the solution and announce it.
-    solutionPesonInfo = personInfo[numberPlayers+1][:]
+    solutionPersonInfo = personInfo[numberPlayers+1][:]
     # The correct person has an info value of 1.
     personIndex = solutionPersonInfo.index(1)
     print("The killer was", personInfo[0][personIndex])
@@ -1110,7 +1122,7 @@ def play_cluedo(
                            initialCards, memories, useMemory)
         questionerIndex = ((questionerIndex + 1) % numberPlayers)
 
-names = ["Me", "Alona", "Christian"]
+names = ["Ellie", "Alona", "Christian"]
 personList = ["Green", "Mustard", "Orchid", "Peacock", "Plum", "Scarlet"]
 weaponList = ["Candlestick", "Dagger", "Lead pipe", "Revolver", "Rope",
               "Wrench"]
