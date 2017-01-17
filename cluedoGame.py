@@ -775,13 +775,13 @@ def follow_responses(guess, playerNames, personInfo, weaponInfo, roomInfo):
                               " not found\n")
                     # If something was shown then end answering.
                     questioningActive = False
+                print_many_lines()
                 # Move to the next person.
             answerIndex = ((answerIndex+1) % numberPlayers)
 
 def use_memories(personInfo, weaponInfo, roomInfo, memories, numberPlayers):
     memoryCount = len(memories)
     # Use previously answered questions to discover extra cards.
-    print("All memories", memories)
     for i in range(memoryCount):
         answerIndex = memories[i][0]
         person = memories[i][1]
@@ -807,12 +807,6 @@ def use_memories(personInfo, weaponInfo, roomInfo, memories, numberPlayers):
             add_card_seen(answerIndex, weaponInfo, weapon, numberPlayers)
         elif((roomOwned + weaponOwned) == 0):
             add_card_seen(answerIndex, personInfo, person, numberPlayers)
-        print("personOwned",personOwned)
-        print("weaponOwned",weaponOwned)
-        print("roomOwned",roomOwned)
-        print(personInfo)
-        print(weaponInfo)
-        print(roomInfo)
 
 def update_information(personInfo, weaponInfo, roomInfo, numberPlayers):
     improvements = True
@@ -901,6 +895,36 @@ def get_room_performance(
                 bestGuessPerformance = performance
     return bestGuessPerformance
 
+def make_weighted_guess(
+    personInfo, weaponInfo, roomInfo, myRoom, numberPlayers, unknownCards,
+    minWeight = 0.01):
+    # Pick a random guess weighted according to possible information to
+    #be gain.
+    currentInformation = compute_information(personInfo, weaponInfo, roomInfo,
+                                              unknownCards, numberPlayers)
+    # Loop through all possible guesses. Find guess giving lowest
+    #information.
+    bestGuesses = []
+    bestGuessPerformance = 100
+    roomList = roomInfo[0][1:10]
+    guessRoom = roomList.index(myRoom)
+    choices = []
+    weights = []
+    for person in range(6):
+        for weapon in range(6):
+            guessPerson = person
+            guessWeapon = weapon
+            guess = [guessPerson, guessWeapon, guessRoom]
+            infoAfterGuess = evaluate_guess(guess, personInfo, weaponInfo,
+                                        roomInfo, numberPlayers, unknownCards)
+            infoImprovement = currentInformation - infoAfterGuess
+            # Weight guesses according to infoImprovement.
+            weight = max(minWeight, infoImprovement)
+            weights.append(weight)
+            choices.append(guess)
+    randomGuess = random_weighted_choice(choices, weights)
+    return randomGuess
+
 def find_indirect_route(
     currentRoom, reachableRooms, personInfo, weaponInfo, roomInfo,
     unknownCards, effectiveDistance, numberPlayers):
@@ -943,7 +967,6 @@ def find_indirect_route(
         # If all reachable rooms are farther from the closestBestRoom
         #then ask to move towards it through the corridor.
         print("\nMove towards " , closestBestRoom, "\n")
-    print("find_indirect_route returns ", closerRoom)
     return closerRoom
 
 def decide_room_movement(
@@ -952,37 +975,34 @@ def decide_room_movement(
     roomList = roomInfo[0][1:10]
     moveToRoom = 0
     # Considering possible information gain choose a room to move to.
-    print("I can reach rooms")
-    for i in range(len(reachableRooms)):
-        print(roomList[reachableRooms[i]])
     # For all reachable rooms check the information that can be gained
     #from asking a question in that room.
     roomPerformances = []
     for i in range(len(reachableRooms)):
         guessRoom = reachableRooms[i]
-        performance = get_room_performance(guessRoom, personInfo, weaponInfo,
-                                    roomInfo, numberPlayers, unknownCards)
-        roomPerformances.append(performance)
-    # If any of the reachable rooms create information then go to best.
-    bestPerformance = min(roomPerformances)
-    if(bestPerformance < currentInformation):
-        # The best room allows to get information better than current.
-        reachableRoomIndex = roomPerformances.index(bestPerformance)
-        print("reachableRooms", reachableRooms)
-        print("reachableRoomIndex", reachableRoomIndex)
-        print("roomList", roomList)
-        moveToRoomIndex = reachableRooms[reachableRoomIndex]
+        infoAfterGuess = get_room_performance(guessRoom, personInfo,
+                                              weaponInfo, roomInfo,
+                                              numberPlayers, unknownCards)
+        infoImprovement = currentInformation - infoAfterGuess
+        roomPerformances.append(infoImprovement)
+        
+    # If any reachable rooms give information then select one randomly.
+    bestPerformance = max(roomPerformances)
+    if(bestPerformance > 0):
+        # Select room randomly weighted according to possible info gain.
+        moveToRoomIndex = random_weighted_choice(reachableRooms,
+                                                 roomPerformances)
         moveToRoom = roomList[moveToRoomIndex]
     else:
+        # No reachable room gains information, move towards betterroom.
         moveToRoomIndex = find_indirect_route(currentRoom, reachableRooms,
-                                         personInfo, weaponInfo, roomInfo,
-                                         unknownCards, effectiveDistance,
+                                              personInfo, weaponInfo, roomInfo,
+                                              unknownCards, effectiveDistance,
                                               numberPlayers)
         if(moveToRoomIndex == "none"):
             moveToRoom = "none"
         else:
             moveToRoom = roomList[moveToRoomIndex]
-    print("decide_room_movement returns ", moveToRoom)
     return moveToRoom
 
 def make_movement(
@@ -1041,6 +1061,17 @@ def make_accusation(personInfo, weaponInfo, roomInfo, numberPlayers):
     print("in the", roomInfo[0][roomIndex])
     temp = raw_input("Was I correct?")
 
+def random_weighted_choice(choices, weights):
+    # Select a choice at random according to weights of each choice.
+    sumWeights = sum(weights)
+    # Select the choice which has a cumulative weight of r.
+    r = random.uniform(0, sumWeights)
+    cumulative = 0
+    for i in range(len(choices)):
+        cumulative += weights[i]
+        if cumulative >= r:
+            return choices[i]
+
 def me_questioning(
     personInfo, weaponInfo, roomInfo, playerNames, initialCards, memories,
     useMemory):
@@ -1056,6 +1087,10 @@ def me_questioning(
         unknownCards[i] = initialCards[i] - knownCards[i]
     # Set solution unknownCards to 1 because only 1 card is ever relevant.
     unknownCards[numberPlayers] = 1
+
+    print(personInfo)
+    print(weaponInfo)
+    print(roomInfo)
     
     # Compare current information with uninformed information level.
     uninformed = (2 * math.log(6)) + math.log(9)    
@@ -1064,6 +1099,7 @@ def me_questioning(
     percentComplete = int(100 * (1 - (currentInformation / uninformed)))
     print("\n\nCurrently", percentComplete, "percent complete\n")
     if(currentInformation == 0):
+        temp = True
         make_accusation(personInfo, weaponInfo, roomInfo, numberPlayers)
 
     # Decide which room to go to.
@@ -1074,11 +1110,11 @@ def me_questioning(
     myRoom = make_movement(personInfo, weaponInfo, roomInfo,
                            currentInformation, unknownCards,
                            roomEffectiveDistance, roomTravelDistance)
-    
+
     # Make a guess and record answers.
     if(myRoom != "none"):
-        guess = find_best_guess(personInfo, weaponInfo, roomInfo,
-                                myRoom, numberPlayers, unknownCards)
+        guess = make_weighted_guess(personInfo, weaponInfo, roomInfo, myRoom,
+                                    numberPlayers, unknownCards)
         follow_responses(guess, playerNames, personInfo, weaponInfo, roomInfo)
 
 def get_initial_cards(playerNames):
@@ -1130,9 +1166,6 @@ def play_cluedo(
             if(quitSignal == "quit"):
                 gameOver = True
         else:
-            print(personInfo)
-            print(weaponInfo)
-            print(roomInfo)
             me_questioning(personInfo, weaponInfo, roomInfo, playerNames,
                            initialCards, memories, useMemory)
         questionerIndex = ((questionerIndex + 1) % numberPlayers)
